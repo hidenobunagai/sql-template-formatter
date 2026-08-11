@@ -65,6 +65,11 @@
           ],
           "default": "upper",
           "description": "Keyword casing applied by sql-formatter."
+        },
+        "sqlTemplateFormatter.replaceOrdinals": {
+          "type": "boolean",
+          "default": true,
+          "description": "Replace GROUP BY / ORDER BY ordinal numbers (e.g. GROUP BY 1, 2) with the referenced column names."
         }
       }
     }

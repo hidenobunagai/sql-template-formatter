@@ -1,4 +1,5 @@
 import { format, type KeywordCase, type SqlLanguage } from 'sql-formatter';
+import { replaceOrdinals } from './ordinals';
 
 type ParamTypes = {
   positional?: boolean;
@@ -15,6 +16,7 @@ export interface FormatterConfig {
   placeholderPatterns: string[];
   namedPrefixes: string[];
   keywordCase: string;
+  replaceOrdinals: boolean;
 }
 
 export const DEFAULT_PLACEHOLDER_PATTERNS = [
@@ -42,11 +44,12 @@ export function formatSql(
   if (config.namedPrefixes.length > 0) {
     paramTypes.named = config.namedPrefixes as ParamTypes['named'];
   }
-  return format(sql, {
+  const formatted = format(sql, {
     language: config.dialect as Dialect,
     keywordCase: config.keywordCase as KeywordCase,
     tabWidth: editorOptions?.tabSize ?? 2,
     useTabs: editorOptions ? !editorOptions.insertSpaces : false,
     paramTypes,
   });
+  return config.replaceOrdinals ? replaceOrdinals(formatted) : formatted;
 }

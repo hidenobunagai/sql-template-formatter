@@ -12,6 +12,7 @@ const config: FormatterConfig = {
   ],
   namedPrefixes: [],
   keywordCase: 'upper',
+  replaceOrdinals: true,
 };
 
 describe('formatSql', () => {
@@ -129,6 +130,68 @@ describe('formatSql', () => {
       formatSql('SELECT x::text FROM t WHERE id = :id;', cfg)
     ).toBe(
       'SELECT\n  x::text\nFROM\n  t\nWHERE\n  id = :id;'
+    );
+  });
+
+  test('replaces GROUP BY ordinals with column names', () => {
+    expect(
+      formatSql('SELECT name, age FROM users GROUP BY 1, 2;', config)
+    ).toBe(
+      'SELECT\n  name,\n  age\nFROM\n  users\nGROUP BY\n  name,\n  age;'
+    );
+  });
+
+  test('replaces ORDER BY ordinals keeping direction suffixes', () => {
+    expect(
+      formatSql('SELECT a AS x, b AS y FROM t ORDER BY 1 DESC, 2 ASC;', config)
+    ).toBe(
+      'SELECT\n  a AS x,\n  b AS y\nFROM\n  t\nORDER BY\n  x DESC,\n  y ASC;'
+    );
+  });
+
+  test('keeps out-of-range ordinals untouched', () => {
+    expect(
+      formatSql('SELECT a FROM t ORDER BY 3;', config)
+    ).toBe(
+      'SELECT\n  a\nFROM\n  t\nORDER BY\n  3;'
+    );
+  });
+
+  test('never replaces ordinals after SELECT *', () => {
+    expect(
+      formatSql('SELECT * FROM t ORDER BY 1, 2;', config)
+    ).toBe(
+      'SELECT\n  *\nFROM\n  t\nORDER BY\n  1,\n  2;'
+    );
+  });
+
+  test('keeps ordinals referencing aggregates without alias', () => {
+    expect(
+      formatSql('SELECT a, COUNT(*) FROM t GROUP BY 1, 2;', config)
+    ).toBe(
+      'SELECT\n  a,\n  COUNT(*)\nFROM\n  t\nGROUP BY\n  a,\n  2;'
+    );
+  });
+
+  test('keeps ordinal when column expression contains a placeholder', () => {
+    expect(
+      formatSql('SELECT ${col}, name FROM t GROUP BY 1, 2;', config)
+    ).toBe(
+      'SELECT\n  ${col},\n  name\nFROM\n  t\nGROUP BY\n  1,\n  name;'
+    );
+    expect(
+      formatSql('SELECT %s, name FROM t GROUP BY 1, 2;', config)
+    ).toBe(
+      'SELECT\n  %s,\n  name\nFROM\n  t\nGROUP BY\n  1,\n  name;'
+    );
+  });
+
+  test('keeps ordinals when replaceOrdinals is disabled', () => {
+    const cfg = { ...config, replaceOrdinals: false };
+    expect(
+      formatSql('SELECT name, age FROM users GROUP BY 1, 2;', cfg)
+    ).toBe(
+      'SELECT\n  name,\n  age\nFROM\n  users\nGROUP BY\n  1,\n  2;'
     );
   });
 });

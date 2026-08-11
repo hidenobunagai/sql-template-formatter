@@ -10,6 +10,7 @@ A VS Code extension that formats `.sql` files containing template placeholders (
 
 - Works with `Shift+Alt+F` (Format Document), selection formatting, and `editor.formatOnSave`
 - Placeholders are kept intact: `${var}` `{var}` `{{ var }}` `%s` `%(name)s`
+- `GROUP BY 1, 2` / `ORDER BY 1` ordinals are replaced with the referenced column names (disable with `sqlTemplateFormatter.replaceOrdinals: false`)
 - Dialect selectable: PostgreSQL (default) / BigQuery / MySQL / SQLite / Snowflake and more (all dialects supported by sql-formatter)
 
 ## Install
@@ -37,6 +38,7 @@ This extension conflicts with other SQL formatter extensions. When using it, set
 | `sqlTemplateFormatter.placeholderPatterns` | Regexes for `${...}`, `{{...}}`, `{...}`, `%(name)s`, `%s` (5 entries) | Array of placeholder regex **strings**. **Earlier patterns take priority** |
 | `sqlTemplateFormatter.namedPrefixes` | `[]` | Prefixes for named parameters (e.g. `[":"]`). Compatible with `::` casts |
 | `sqlTemplateFormatter.keywordCase` | `upper` | Keyword casing (preserve/upper/lower) |
+| `sqlTemplateFormatter.replaceOrdinals` | `true` | Replace `GROUP BY`/`ORDER BY` ordinals (e.g. `1, 2`) with the referenced column names. Ordinals referencing placeholder expressions, aggregates without alias, or `SELECT *` are left untouched |
 
 ### Customizing placeholders
 

@@ -8,6 +8,7 @@ function getConfig(): FormatterConfig {
     placeholderPatterns: c.get<string[]>('placeholderPatterns', []),
     namedPrefixes: c.get<string[]>('namedPrefixes', []),
     keywordCase: c.get<string>('keywordCase', 'upper'),
+    replaceOrdinals: c.get<boolean>('replaceOrdinals', true),
   };
 }
 
