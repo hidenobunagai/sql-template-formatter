@@ -3,7 +3,7 @@
   "displayName": "SQL Template Formatter",
   "icon": "icon.png",
   "description": "SQL formatter that handles template placeholders (${var}, {var}, {{ var }}, %s, %(name)s) used in Python projects",
-  "version": "0.0.7",
+  "version": "0.0.8",
   "publisher": "HidenobuNagai",
   "license": "MIT",
   "repository": {
@@ -78,7 +78,8 @@
     "compile": "tsc -p ./",
     "watch": "tsc -w -p ./",
     "test": "bun test",
-    "package": "vsce package",
+    "package": "vsce package && python3 scripts/verify_vsix.py",
+    "verify:vsix": "python3 scripts/verify_vsix.py",
     "publish": "vsce publish"
   },
   "dependencies": {
