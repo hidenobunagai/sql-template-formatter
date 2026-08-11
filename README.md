@@ -67,6 +67,13 @@ bun run package   # .vsix 生成
 
 F5 で Extension Development Host を起動して動作確認できます。
 
+## Marketplace への公開
+
+1. https://marketplace.visualstudio.com/manage で Publisher を作成する (Azure DevOps アカウントが必要)
+2. `package.json` の `publisher` を自分の Publisher ID に変更する
+3. Azure DevOps の Personal Access Token (Marketplace 管理スコープ) を作成し、`VSCE_PAT` 環境変数に設定する (平文コミット禁止。dotenvx 等で管理)
+4. 実行: `bun run publish`
+
 ## ライセンス
 
 MIT

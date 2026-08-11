@@ -10,3 +10,5 @@ node_modules/**
 bunfig.toml
 bun.lock
 tsconfig.json
+AGENTS.md
+.headroom/**
