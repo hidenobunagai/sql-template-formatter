@@ -28,3 +28,6 @@ opencode.jsonc
 .mcp.json
 .qoder/**
 .windsurfrules
+scratch/**
+.superpowers/**
+scripts/**
