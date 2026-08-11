@@ -52,8 +52,7 @@
           "enum": [
             "preserve",
             "upper",
-            "lower",
-            "capitalize"
+            "lower"
           ],
           "default": "upper",
           "description": "Keyword casing applied by sql-formatter."

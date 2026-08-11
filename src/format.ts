@@ -1,7 +1,14 @@
-import { format, type FormatOptions } from 'sql-formatter';
+import { format, type KeywordCase, type SqlLanguage } from 'sql-formatter';
 
-export type Dialect = NonNullable<FormatOptions['language']>;
-export type KeywordCase = NonNullable<FormatOptions['keywordCase']>;
+type ParamTypes = {
+  positional?: boolean;
+  numbered?: ('?' | ':' | '$')[];
+  named?: (':' | '@' | '$')[];
+  quoted?: (':' | '@' | '$')[];
+  custom?: Array<{ regex: string; key?: (text: string) => string }>;
+};
+
+export type Dialect = SqlLanguage;
 
 export interface FormatterConfig {
   dialect: string;
@@ -28,12 +35,12 @@ export function formatSql(
   config: FormatterConfig,
   editorOptions?: EditorOptions
 ): string {
-  const paramTypes: FormatOptions['paramTypes'] = {};
+  const paramTypes: ParamTypes = {};
   if (config.placeholderPatterns.length > 0) {
     paramTypes.custom = config.placeholderPatterns.map((regex) => ({ regex }));
   }
   if (config.namedPrefixes.length > 0) {
-    paramTypes.named = config.namedPrefixes;
+    paramTypes.named = config.namedPrefixes as ParamTypes['named'];
   }
   return format(sql, {
     language: config.dialect as Dialect,
