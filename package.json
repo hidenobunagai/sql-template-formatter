@@ -3,7 +3,7 @@
   "displayName": "SQL Template Formatter",
   "icon": "icon.png",
   "description": "SQL formatter that handles template placeholders (${var}, {var}, {{ var }}, %s, %(name)s) used in Python projects",
-  "version": "0.0.6",
+  "version": "0.0.7",
   "publisher": "HidenobuNagai",
   "license": "MIT",
   "repository": {
