@@ -1,0 +1,12 @@
+.vscode/**
+.vscode-test/**
+src/**
+test/**
+poc/**
+docs/**
+node_modules/**
+**/*.map
+.gitignore
+bunfig.toml
+bun.lock
+tsconfig.json
