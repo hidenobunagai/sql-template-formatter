@@ -3,8 +3,16 @@
   "displayName": "SQL Template Formatter",
   "description": "SQL formatter that handles template placeholders (${var}, {var}, {{ var }}, %s, %(name)s) used in Python projects",
   "version": "0.0.1",
-  "publisher": "sql-template-formatter",
+  "publisher": "HidenobuNagai",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/hidenobunagai/sql-template-formatter"
+  },
+  "homepage": "https://github.com/hidenobunagai/sql-template-formatter",
+  "bugs": {
+    "url": "https://github.com/hidenobunagai/sql-template-formatter/issues"
+  },
   "engines": {
     "vscode": "^1.85.0"
   },

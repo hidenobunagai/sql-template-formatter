@@ -1,5 +1,9 @@
 # SQL Template Formatter
 
+[![Visual Studio Marketplace Version](https://img.shields.io/visual-studio-marketplace/v/HidenobuNagai.sql-template-formatter?label=VS%20Marketplace)](https://marketplace.visualstudio.com/items?itemName=HidenobuNagai.sql-template-formatter)
+[![Visual Studio Marketplace Downloads](https://img.shields.io/visual-studio-marketplace/d/HidenobuNagai.sql-template-formatter)](https://marketplace.visualstudio.com/items?itemName=HidenobuNagai.sql-template-formatter)
+[![Open VSX Version](https://img.shields.io/open-vsx/v/HidenobuNagai/sql-template-formatter?label=Open%20VSX)](https://open-vsx.org/extension/HidenobuNagai/sql-template-formatter)
+
 Python プロジェクトなどで使われる .sql ファイルのテンプレートプレースホルダーを壊さずに SQL を整形する VSCode 拡張機能です。既存の SQL フォーマッターが `${XXX}` を文法エラーとして扱う問題を解決します。
 
 ## 機能
@@ -10,15 +14,16 @@ Python プロジェクトなどで使われる .sql ファイルのテンプレ�
 
 ## インストール
 
-- ビルド: `bun install && bun run compile`
-- .vsix 生成: `bun run package` → 生成された .vsix を VSCode の Extensions ビュー → `...` → `Install from VSIX...` でインストール
+- Visual Studio Marketplace: [HidenobuNagai.sql-template-formatter](https://marketplace.visualstudio.com/items?itemName=HidenobuNagai.sql-template-formatter)
+- Open VSX (VSCodium 等): [HidenobuNagai/sql-template-formatter](https://open-vsx.org/extension/HidenobuNagai/sql-template-formatter)
+- .vsix から: `bun run package` で生成した .vsix を VSCode の Extensions ビュー → `...` → `Install from VSIX...` でインストール
 
 既存の SQL フォーマッター拡張機能とは競合します。本拡張を使う場合は settings.json で既定フォーマッターを指定し、他の SQL フォーマッター拡張は無効化してください:
 
 ```json
 {
   "[sql]": {
-    "editor.defaultFormatter": "sql-template-formatter.sql-template-formatter",
+    "editor.defaultFormatter": "HidenobuNagai.sql-template-formatter",
     "editor.formatOnSave": true
   }
 }
@@ -67,12 +72,13 @@ bun run package   # .vsix 生成
 
 F5 で Extension Development Host を起動して動作確認できます。
 
-## Marketplace への公開
+## リリース手順 (メンテナ向け)
 
-1. https://marketplace.visualstudio.com/manage で Publisher を作成する (Azure DevOps アカウントが必要)
-2. `package.json` の `publisher` を自分の Publisher ID に変更する
-3. Azure DevOps の Personal Access Token (Marketplace 管理スコープ) を作成し、`VSCE_PAT` 環境変数に設定する (平文コミット禁止。dotenvx 等で管理)
-4. 実行: `bun run publish`
+1. バージョンを上げる: `package.json` の `version` を更新し、`git tag vX.Y.Z` でタグ付け
+2. VS Marketplace へ公開: `VSCE_PAT` を設定した状態で `bun run publish`
+3. Open VSX へ公開: `OVSX_PAT` を設定した状態で `bunx ovsx publish -p $OVSX_PAT`
+
+PAT は平文コミット禁止。dotenvx 等で管理してください。
 
 ## ライセンス
 
