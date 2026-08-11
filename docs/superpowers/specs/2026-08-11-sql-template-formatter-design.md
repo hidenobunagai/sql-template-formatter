@@ -36,8 +36,7 @@ VSCode 拡張機能を新規作成する。
        tabWidth: <editor 設定>,
        useTabs: <editor 設定>,
        paramTypes: {
-         custom:     [regex...],   // settings から
-         positional: ['%s'],       // settings から
+         custom:     [regex...],   // settings から (文字列のまま渡す)
          named:      undefined,    // 既定 OFF
        }
      })
@@ -51,15 +50,32 @@ VSCode 拡張機能を新規作成する。
 - フォーマット失敗時: `vscode.window.showWarningMessage` にエラーを表示し、
   TextEdit を返さない (ファイルは変更しない。保存はブロックしない)。
 
+### PoC 実測で確定した事実 (2026-08-11, sql-formatter@15.8.2)
+
+- **custom の正規表現は文字列で渡すこと**。RegExp オブジェクトはコンパイル
+  エラー or マッチしない (内部で Unicode フラグ付き再コンパイル等があるため)。
+  settings は JSON 文字列なので、そのまま string を渡せばよい。
+- **`positional` 配列は複数文字トークンに使えない** (`['%s']` は `% s` に分解)。
+  `%s` は custom regex の `'%s'` で対応する (剰余演算子 `5 % 2` には影響しない)。
+  → `positionalTokens` 設定は廃止 (設定数削減)。
+- `?` は paramTypes 指定なしでも既定で位置パラメータとして扱われる。
+- `{...}` 単一括弧は `${}` より先のパターンに含めても共存できる
+  (例: `SELECT {col}, {{ col2 }}, ${c3}` が1クエリ内で全部成立)。
+- `named: [':']` を ON にしても `::` キャスト・文字列内のコロンは壊れない。
+- `SELECT FROM WHERE;` は throw しない。確実に throw するのは文字列リテラルの
+  閉じ忘れ (`'abc` など)。エラーパスのテストはこれを使う。
+
 ## 4. 設定 (contributes.configuration)
 
 | 設定キー | 既定値 | 説明 |
 |---|---|---|
 | `sqlTemplateFormatter.dialect` | `postgresql` | sql-formatter の方言名 (bigquery/mysql/sqlite/snowflake 等) |
-| `sqlTemplateFormatter.placeholderPatterns` | `["\\$\\{[^}]+\\}", "\\{\\{[\\s\\S]*?\\}\\}", "\\{[^\\{\\}]*\\}", "%\\([^)]*\\)s"]` | 正規表現配列。順序 = マッチ優先度 (Jinja2 を先に) |
-| `sqlTemplateFormatter.positionalTokens` | `["%s"]` | 固定トークン |
-| `sqlTemplateFormatter.namedPrefixes` | `[]` | `:` は `::` キャストと衝突するため任意で ON |
+| `sqlTemplateFormatter.placeholderPatterns` | `["\\$\\{[^}]+\\}", "\\{\\{[\\s\\S]*?\\}\\}", "\\{[^\\{\\}]*\\}", "%\\([^)]*\\)s", "%s"]` | 正規表現の**文字列**配列。順序 = マッチ優先度 (Jinja2 を先に) |
+| `sqlTemplateFormatter.namedPrefixes` | `[]` | `:` は既定 OFF だが、`::` キャストと共存できることは PoC で確認済み |
 | `sqlTemplateFormatter.keywordCase` | `upper` | キーワードの大文字/小文字 |
+
+`positionalTokens` 設定は PoC で複数文字トークンに非対応と判明したため廃止し、
+`%s` は `placeholderPatterns` に統合した。
 
 決定: 単一 `{name}` パターンは既定 ON (ユーザー承認済み)。JSON リテラル
 `'{"a":1}'` との誤マッチリスクは README に注意書きとして記載。
@@ -76,12 +92,18 @@ VSCode 拡張機能を新規作成する。
 - WHERE の数値位置 `${id}`
 - 文字列リテラル内 `'${name}'`
 - `FROM ${table}`
-- `%s` (positional)
+- `%s` (custom regex)
 - `%(name)s`
 - `{{ var }}` (Jinja2)
 - `{var}` (単一括弧)
 - 複数行プレースホルダー
-- 不正 SQL → throw → 呼び出し側のエラーハンドリング
+- 剰余演算子 `5 % 2` が壊れないこと
+- 文字列内 JSON リテラル `'{"a": 1}'::jsonb` が壊れないこと
+- コメント内のプレースホルダー
+- 不正 SQL (文字列閉じ忘れ) → throw → 呼び出し側のエラーハンドリング
+- keywordCase: lower
+
+期待値はすべて PoC の実測出力を使用する。
 
 ## 7. ファイル構成
 

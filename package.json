@@ -1,0 +1,80 @@
+{
+  "name": "sql-template-formatter",
+  "displayName": "SQL Template Formatter",
+  "description": "SQL formatter that handles template placeholders (${var}, {var}, {{ var }}, %s, %(name)s) used in Python projects",
+  "version": "0.0.1",
+  "publisher": "sql-template-formatter",
+  "license": "MIT",
+  "engines": {
+    "vscode": "^1.85.0"
+  },
+  "categories": [
+    "Formatters",
+    "Other"
+  ],
+  "activationEvents": [
+    "onLanguage:sql"
+  ],
+  "main": "./out/extension.js",
+  "contributes": {
+    "configuration": {
+      "title": "SQL Template Formatter",
+      "properties": {
+        "sqlTemplateFormatter.dialect": {
+          "type": "string",
+          "default": "postgresql",
+          "description": "SQL dialect passed to sql-formatter (e.g. postgresql, bigquery, mysql, sqlite, snowflake)."
+        },
+        "sqlTemplateFormatter.placeholderPatterns": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [
+            "\\$\\{[^}]+\\}",
+            "\\{\\{[\\s\\S]*?\\}\\}",
+            "\\{[^{}]*\\}",
+            "%\\([^)]*\\)s",
+            "%s"
+          ],
+          "description": "Regex patterns for template placeholders, matched in order (list Jinja2 {{ }} before single { })."
+        },
+        "sqlTemplateFormatter.namedPrefixes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "default": [],
+          "description": "Named parameter prefixes (e.g. [\":\"] for psycopg2). Caution: \":\" conflicts with PostgreSQL :: casts. Off by default."
+        },
+        "sqlTemplateFormatter.keywordCase": {
+          "type": "string",
+          "enum": [
+            "preserve",
+            "upper",
+            "lower",
+            "capitalize"
+          ],
+          "default": "upper",
+          "description": "Keyword casing applied by sql-formatter."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "compile": "tsc -p ./",
+    "watch": "tsc -w -p ./",
+    "test": "bun test",
+    "package": "vsce package",
+    "publish": "vsce publish"
+  },
+  "dependencies": {
+    "sql-formatter": "^15.4.0"
+  },
+  "devDependencies": {
+    "@types/node": "^24.0.0",
+    "@types/vscode": "^1.85.0",
+    "@vscode/vsce": "^3.0.0",
+    "typescript": "^5.5.0"
+  }
+}
