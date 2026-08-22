@@ -2,5 +2,3 @@ node_modules/
 out/
 *.vsix
 .headroom/
-# Added by code-review-graph
-.code-review-graph/
