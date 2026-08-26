@@ -13,6 +13,18 @@ A VS Code extension that formats `.sql` files containing template placeholders (
 - `GROUP BY 1, 2` / `ORDER BY 1` ordinals are replaced with the referenced column names (disable with `sqlTemplateFormatter.replaceOrdinals: false`)
 - Dialect selectable: PostgreSQL (default) / BigQuery / MySQL / SQLite / Snowflake and more (all dialects supported by sql-formatter)
 
+## How it works
+
+Existing SQL formatters treat template placeholders (`${var}`, `{{ var }}`, `%s` …) as syntax errors and refuse to format such files. This extension avoids masking entirely: it registers the placeholder patterns with `sql-formatter` v15+ as parameter tokens (`paramTypes.custom`), so the SQL is formatted with the placeholders kept intact.
+
+<table>
+  <tr>
+    <td align="center"><a href="problem.png"><img src="problem.png" alt="Problem: template placeholders break existing SQL formatters" width="300" /></a><br /><b>Problem</b></td>
+    <td align="center"><a href="how_it_works.png"><img src="how_it_works.png" alt="How it works: placeholders are registered as parameters, formatted, then ordinals are restored" width="300" /></a><br /><b>How it works</b></td>
+    <td align="center"><a href="architecture.png"><img src="architecture.png" alt="Architecture: a small VS Code extension with one runtime dependency" width="300" /></a><br /><b>Architecture</b></td>
+  </tr>
+</table>
+
 ## Install
 
 - Visual Studio Marketplace: [HidenobuNagai.sql-template-formatter](https://marketplace.visualstudio.com/items?itemName=HidenobuNagai.sql-template-formatter)
