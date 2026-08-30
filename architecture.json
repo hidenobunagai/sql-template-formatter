@@ -1,0 +1,208 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "SQL Template Formatter Architecture",
+    "output": "architecture.html",
+    "quality_profile": "showcase",
+    "repository": {
+      "url": "https://github.com/hidenobunagai/sql-template-formatter",
+      "revision": "caf469a5766fed83aa95e01d2a1ab82c83cc46df"
+    },
+    "views": [
+      {
+        "id": "full-pipeline",
+        "label": "Complete formatting pipeline",
+        "focus": ["editor", "provider", "engine", "lexer", "ordinals", "buffer"],
+        "note": "End-to-end flow from editor format command to buffer replacement."
+      },
+      {
+        "id": "template-preservation",
+        "label": "Template token handling",
+        "focus": ["config", "engine", "lexer"],
+        "note": "Custom regex parameters passed directly to sql-formatter without masking."
+      },
+      {
+        "id": "ordinal-resolution",
+        "label": "Ordinal column resolution",
+        "focus": ["lexer", "ordinals", "buffer"],
+        "note": "Token parsing resolves GROUP BY / ORDER BY numbers to column names."
+      }
+    ]
+  },
+  "components": [
+    {
+      "id": "editor",
+      "type": "frontend",
+      "label": "VS Code Editor",
+      "sublabel": "Format trigger",
+      "tag": "Shift+Alt+F / Save",
+      "pos": [40, 260],
+      "size": [130, 60],
+      "sources": [
+        { "path": "src/extension.ts", "line": 30, "end_line": 61, "label": "formatting providers" }
+      ]
+    },
+    {
+      "id": "config",
+      "type": "frontend",
+      "label": "Extension Settings",
+      "sublabel": "settings.json",
+      "tag": "sqlTemplateFormatter.*",
+      "pos": [250, 70],
+      "size": [130, 64],
+      "sources": [
+        { "path": "src/extension.ts", "line": 4, "end_line": 13, "label": "getConfig()" }
+      ]
+    },
+    {
+      "id": "provider",
+      "type": "backend",
+      "label": "Format Providers",
+      "sublabel": "src/extension.ts",
+      "tag": "Document & Range",
+      "pos": [250, 260],
+      "size": [130, 60],
+      "sources": [
+        { "path": "src/extension.ts", "line": 29, "end_line": 67, "label": "activate()" }
+      ]
+    },
+    {
+      "id": "engine",
+      "type": "backend",
+      "label": "Formatter Engine",
+      "sublabel": "src/format.ts",
+      "tag": "formatSql()",
+      "pos": [460, 260],
+      "size": [130, 60],
+      "sources": [
+        { "path": "src/format.ts", "line": 35, "end_line": 55, "label": "formatSql()" }
+      ]
+    },
+    {
+      "id": "lexer",
+      "type": "backend",
+      "label": "sql-formatter v15+",
+      "sublabel": "paramTypes.custom",
+      "tag": "Zero-Masking",
+      "pos": [670, 260],
+      "size": [130, 60],
+      "sources": [
+        { "path": "src/format.ts", "line": 47, "end_line": 53, "label": "format()" }
+      ]
+    },
+    {
+      "id": "ordinals",
+      "type": "backend",
+      "label": "AST Ordinal Resolver",
+      "sublabel": "src/ordinals.ts",
+      "tag": "replaceOrdinals()",
+      "pos": [880, 260],
+      "size": [130, 60],
+      "sources": [
+        { "path": "src/ordinals.ts", "line": 218, "end_line": 373, "label": "replaceOrdinals()" }
+      ]
+    },
+    {
+      "id": "buffer",
+      "type": "database",
+      "label": "Document Buffer",
+      "sublabel": "Active SQL file",
+      "tag": "TextEdit.replace",
+      "pos": [1090, 260],
+      "size": [130, 60],
+      "sources": [
+        { "path": "src/extension.ts", "line": 44, "end_line": 44, "label": "TextEdit.replace" }
+      ]
+    }
+  ],
+  "boundaries": [
+    {
+      "kind": "region",
+      "label": "VS Code Host Environment",
+      "wraps": ["editor", "config", "provider", "buffer"],
+      "pad": 20
+    },
+    {
+      "kind": "security-group",
+      "label": "Formatting Pipeline",
+      "wraps": ["engine", "lexer", "ordinals"],
+      "pad": 16
+    }
+  ],
+  "connections": [
+    {
+      "id": "editor-provider",
+      "from": "editor",
+      "to": "provider",
+      "label": "format",
+      "variant": "emphasis"
+    },
+    {
+      "id": "config-provider",
+      "from": "config",
+      "to": "provider",
+      "label": "getConfig()",
+      "fromSide": "bottom",
+      "toSide": "top",
+      "labelAt": [315, 197]
+    },
+    {
+      "id": "provider-engine",
+      "from": "provider",
+      "to": "engine",
+      "label": "raw SQL",
+      "variant": "emphasis"
+    },
+    {
+      "id": "engine-lexer",
+      "from": "engine",
+      "to": "lexer",
+      "label": "paramTypes",
+      "variant": "emphasis"
+    },
+    {
+      "id": "lexer-ordinals",
+      "from": "lexer",
+      "to": "ordinals",
+      "label": "parsed SQL",
+      "variant": "emphasis"
+    },
+    {
+      "id": "ordinals-buffer",
+      "from": "ordinals",
+      "to": "buffer",
+      "label": "TextEdit",
+      "variant": "emphasis"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "Zero-Masking Architecture",
+      "items": [
+        "No fragile __VAR_N__ masking or placeholder leak risks",
+        "Registers ${...}, {{...}}, {...}, %s, %(name)s as paramTypes.custom",
+        "Supports all standard dialects: PostgreSQL, BigQuery, MySQL, SQLite, Snowflake"
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Intelligent Post-Processing",
+      "items": [
+        "AST tokenizer tracks SELECT scope, aliases, and expressions",
+        "Resolves GROUP BY 1, 2 and ORDER BY 1 to column names or aliases",
+        "Safely preserves aggregations (COUNT(*)) and template placeholders"
+      ]
+    },
+    {
+      "dot": "rose",
+      "title": "VS Code Native Integration",
+      "items": [
+        "Registers DocumentFormattingEditProvider & DocumentRangeFormattingEditProvider",
+        "Works seamlessly with Shift+Alt+F, selection format, and formatOnSave",
+        "Fail-safe: shows warning on syntax error without corrupting file"
+      ]
+    }
+  ]
+}

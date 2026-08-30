@@ -32,5 +32,9 @@ scratch/**
 .superpowers/**
 scripts/**
 architecture.png
+architecture.html
+architecture.json
+*.visual-check.*
 how_it_works.png
 problem.png
+
