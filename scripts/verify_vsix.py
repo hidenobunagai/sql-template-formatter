@@ -25,7 +25,7 @@ ALLOWED_NODE_MODULES = {
 }
 ALLOWED_NESTED_MODULES = {("nearley", "node_modules", "commander")}
 
-EXPECTED_TOP_LEVEL = {"package.json", "icon.png", "readme.md", "LICENSE.txt"}
+EXPECTED_TOP_LEVEL = {"package.json", "icon.png", "readme.md", "LICENSE.txt", "changelog.md"}
 REQUIRED_TOP_LEVEL = {"package.json", "icon.png", "readme.md", "LICENSE.txt"}
 REQUIRED_OUT = {"out/extension.js", "out/format.js", "out/ordinals.js"}
 
