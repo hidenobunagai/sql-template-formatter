@@ -20,6 +20,7 @@ First release that also ships to **npm**: the formatter is now available as a CL
 
 ### Fixed
 
+- `package.json` is now exactly what npm's publish-time normalization produces: the `bin` path is `out/cli.js` (not `./out/cli.js`) and `repository.url` uses the `git+https://…git` form. npm 11 **removes** a `./`-prefixed bin entry when publishing, so the first npm publish would have shipped a package with no executable at all; `ci.yml` now runs `npm pkg fix` and fails if the manifest drifts again.
 - **The file's final newline is no longer dropped.** `sql-formatter` re-prints the parse tree, so the newline after the last statement belonged to no node and was silently removed — every formatted file then showed `\ No newline at end of file` in `git diff`, and `--check` could never pass on a normal newline-terminated file (its output could not equal the input). `formatSql` now preserves the input's final-newline state: exactly one `\n` when the input had one, none when it did not. This fixes the extension (format-on-save) and the CLI together — fixing only the CLI would have made the two fight over the last byte in repos where both run. Line endings stay LF-normalized (the Prettier default).
 - `test/format.test.ts`: +5 cases for the trailing-newline contract (kept, collapsed when repeated, not added, idempotent, placeholder-only input).
 - `test/cli.test.ts`: +2 cases (`--write` keeps the newline / does not add one); the `formatted.sql` fixture is now newline-terminated, so `--check` passing is a regression guard for the bug above.

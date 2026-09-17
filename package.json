@@ -8,7 +8,7 @@
   "license": "MIT",
   "repository": {
     "type": "git",
-    "url": "https://github.com/hidenobunagai/sql-template-formatter"
+    "url": "git+https://github.com/hidenobunagai/sql-template-formatter.git"
   },
   "homepage": "https://github.com/hidenobunagai/sql-template-formatter",
   "bugs": {
@@ -27,7 +27,7 @@
   ],
   "main": "./out/extension.js",
   "bin": {
-    "sql-template-formatter": "./out/cli.js"
+    "sql-template-formatter": "out/cli.js"
   },
   "contributes": {
     "configuration": {

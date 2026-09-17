@@ -13,4 +13,12 @@ jobs:
       - run: bun install --frozen-lockfile
       - run: bun run compile
       - run: bun test
+      # `npm publish` rewrites the manifest before uploading, and npm 11 *removes*
+      # a bin entry whose path starts with "./" — which would publish a package
+      # with no executable at all. Fail here instead if package.json drifts from
+      # the form npm produces.
+      - name: Verify package.json is publish-clean
+        run: |
+          npm pkg fix
+          git diff --exit-code -- package.json
       - run: bun run package
