@@ -10,10 +10,8 @@ permissions:
   contents: read
 
 jobs:
-  publish:
+  marketplaces:
     runs-on: ubuntu-latest
-    env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -30,13 +28,39 @@ jobs:
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
         run: npx --yes ovsx publish *.vsix -p "$OVSX_PAT"
-      # Skipped while the NPM_TOKEN secret is unset, so tag releases keep working
-      # for the two marketplaces until the npm package is claimed.
+
+  # A separate job on purpose: the two registries fail independently (a VSIX
+  # version cannot be republished, while npm can be retried on the next version),
+  # so "Re-run failed jobs" must be able to retry one without touching the other.
+  npm:
+    runs-on: ubuntu-latest
+    env:
+      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run compile
+
+      # Skipped until the NPM_TOKEN secret exists, so tag releases keep working
+      # for the two marketplaces while the npm package is still unclaimed.
       - uses: actions/setup-node@v4
         if: env.NPM_TOKEN != ''
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      # Guards the packaging trap: `out/` is gitignored, and `files` in
+      # package.json is unusable here (VSCE rejects it next to .vscodeignore),
+      # so the tarball inventory depends on .npmignore alone.
+      - name: Verify the npm tarball ships the CLI
+        if: env.NPM_TOKEN != ''
+        run: |
+          npm pack --dry-run 2>&1 | tee /tmp/npm-pack.txt
+          grep -q "out/cli.js" /tmp/npm-pack.txt
+          grep -q "out/ordinals.js" /tmp/npm-pack.txt
       - name: Publish to npm
         if: env.NPM_TOKEN != ''
         env:
