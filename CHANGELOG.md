@@ -3,7 +3,9 @@
 Notable changes to the **SQL Template Formatter** VS Code extension.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
-## [Unreleased]
+## [0.0.11] - 2026-09-17
+
+First release that also ships to **npm**: the formatter is now available as a CLI (`npx sql-template-formatter`) built on the extension's own core, so the same placeholder handling and ordinal replacement work in CI, pre-commit, and AI-agent hooks. This release also fixes the file's final newline being dropped on every format.
 
 ### Added
 
