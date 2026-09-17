@@ -39,8 +39,13 @@ jobs:
   # so "Re-run failed jobs" must be able to retry one without touching the other.
   npm:
     runs-on: ubuntu-latest
-    env:
-      NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
+    # Trusted publishing (OIDC) replaces the token: no NPM_TOKEN secret, nothing to
+    # rotate or expire. Configured at
+    # https://www.npmjs.com/package/sql-template-formatter/access — the workflow
+    # filename below must match what is registered there ("publish.yml").
+    permissions:
+      contents: read
+      id-token: write
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
@@ -50,24 +55,23 @@ jobs:
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run compile
 
-      # Skipped until the NPM_TOKEN secret exists, so tag releases keep working
-      # for the two marketplaces while the npm package is still unclaimed.
       - uses: actions/setup-node@v4
-        if: env.NPM_TOKEN != ''
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
+      # Trusted publishing needs npm CLI >= 11.5.1; the runner's bundled npm is older.
+      - name: Upgrade npm for OIDC support
+        run: npm install -g npm@latest
       # Guards the packaging trap: `out/` is gitignored, and `files` in
       # package.json is unusable here (VSCE rejects it next to .vscodeignore),
       # so the tarball inventory depends on .npmignore alone.
       - name: Verify the npm tarball ships the CLI
-        if: env.NPM_TOKEN != ''
         run: |
           npm pack --dry-run 2>&1 | tee /tmp/npm-pack.txt
           grep -q "out/cli.js" /tmp/npm-pack.txt
           grep -q "out/ordinals.js" /tmp/npm-pack.txt
+      # No NODE_AUTH_TOKEN: npm exchanges the GitHub OIDC token for a short-lived
+      # publish credential when a trusted publisher matches this workflow, and adds
+      # provenance attestations automatically.
       - name: Publish to npm
-        if: env.NPM_TOKEN != ''
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish --access public

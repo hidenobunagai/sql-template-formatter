@@ -3,6 +3,16 @@
 Notable changes to the **SQL Template Formatter** VS Code extension.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- npm publishing switched from an `NPM_TOKEN` secret to [trusted publishing (OIDC)](https://docs.npmjs.com/trusted-publishers): the npm job has `id-token: write`, installs npm ≥ 11.5.1, and publishes with no credential at all. Provenance attestations are now attached automatically, and there is no token to rotate — which matters because npm is retiring bypass-2FA tokens for direct publishing.
+
+### Fixed
+
+- The npm script `publish` is renamed to `publish:vsce`. npm runs a script named `publish` as a lifecycle step of `npm publish`, so the first successful npm release re-ran `vsce publish` inside the npm job (without `VSCE_PAT`) and reported the job as failed *after* the package had already been published. Documented in the README release steps.
+
 ## [0.0.11] - 2026-09-17
 
 First release that also ships to **npm**: the formatter is now available as a CLI (`npx sql-template-formatter`) built on the extension's own core, so the same placeholder handling and ordinal replacement work in CI, pre-commit, and AI-agent hooks. This release also fixes the file's final newline being dropped on every format.
@@ -12,7 +22,7 @@ First release that also ships to **npm**: the formatter is now available as a CL
 - **CLI** (`npx sql-template-formatter`): formats `.sql` files or stdin through the extension's own core (`src/format.ts` + `src/ordinals.ts`), so placeholders (`${var}`, `{{ var }}`, `%s`, `%(name)s`) and `GROUP BY` / `ORDER BY` ordinal replacement behave identically to the editor. Options: `--write`, `--check`, `--dialect`, `--keyword-case`, `--no-ordinals`, `--tab-width` / `--tabs`, `--config`; the nearest `.sql-formatter.json` is discovered automatically. Registered as the package `bin`, so it is usable from npm, CI, pre-commit, and AI-agent hooks.
 - `.npmignore`: publishes only `out/` (plus package.json / README / CHANGELOG / LICENSE). It is required because `.gitignore` ignores `out/` and npm falls back to `.gitignore` — while `files` in package.json cannot be used here, since VSCE aborts on an extension that has both a `.vscodeignore` and a `files` property.
 - `test/cli.test.ts`: 11 end-to-end cases driving the built CLI (file → stdout, stdin, `--write` idempotence, `--check` exit codes, `--no-ordinals`, `.sql-formatter.json` discovery, unknown dialect, missing file argument, `--version`, trailing-newline preservation).
-- `Publish` workflow: npm publish step, skipped until the `NPM_TOKEN` secret is set so tag releases keep working meanwhile.
+- `Publish` workflow: npm publish step (guarded by the `NPM_TOKEN` secret at the time; switched to trusted publishing right after — see Unreleased).
 
 ### Changed
 
@@ -20,7 +30,6 @@ First release that also ships to **npm**: the formatter is now available as a CL
 
 ### Fixed
 
-- The npm script `publish` is renamed to `publish:vsce`. npm runs a script named `publish` as a lifecycle step of `npm publish`, so the first successful npm release re-ran `vsce publish` inside the npm job (without `VSCE_PAT`) and reported the job as failed *after* the package had already been published. Documented in the README release steps.
 - `package.json` is now exactly what npm's publish-time normalization produces: the `bin` path is `out/cli.js` (not `./out/cli.js`) and `repository.url` uses the `git+https://…git` form. npm 11 **removes** a `./`-prefixed bin entry when publishing, so the first npm publish would have shipped a package with no executable at all; `ci.yml` now runs `npm pkg fix` and fails if the manifest drifts again.
 - **The file's final newline is no longer dropped.** `sql-formatter` re-prints the parse tree, so the newline after the last statement belonged to no node and was silently removed — every formatted file then showed `\ No newline at end of file` in `git diff`, and `--check` could never pass on a normal newline-terminated file (its output could not equal the input). `formatSql` now preserves the input's final-newline state: exactly one `\n` when the input had one, none when it did not. This fixes the extension (format-on-save) and the CLI together — fixing only the CLI would have made the two fight over the last byte in repos where both run. Line endings stay LF-normalized (the Prettier default).
 - `test/format.test.ts`: +5 cases for the trailing-newline contract (kept, collapsed when repeated, not added, idempotent, placeholder-only input).
