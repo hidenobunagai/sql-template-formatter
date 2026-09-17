@@ -51,5 +51,10 @@ export function formatSql(
     useTabs: editorOptions ? !editorOptions.insertSpaces : false,
     paramTypes,
   });
-  return config.replaceOrdinals ? replaceOrdinals(formatted) : formatted;
+  const result = config.replaceOrdinals ? replaceOrdinals(formatted) : formatted;
+  // sql-formatter re-prints the parse tree, so the final newline belongs to no
+  // statement and gets dropped. Restore it when the input had one: a formatter
+  // must not add or remove the file's last byte, or every run leaves a
+  // "\ No newline at end of file" diff behind (and `--check` never passes).
+  return sql.endsWith('\n') && !result.endsWith('\n') ? `${result}\n` : result;
 }

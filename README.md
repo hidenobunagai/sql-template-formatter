@@ -78,6 +78,8 @@ The nearest ancestor `.sql-formatter.json` is picked up automatically. It accept
 
 When neither `placeholderPatterns` nor `paramTypes.custom` is set, the extension's five default patterns apply, so placeholders survive untouched. The CLI does not read VS Code's `settings.json`; its defaults match the extension's defaults (`postgresql` + `upper` + ordinals replaced).
 
+The file's final newline is **preserved**: a newline-terminated file stays newline-terminated (extra trailing blank lines collapse to one) and a file without one is left alone. `sql-formatter` re-prints the parse tree, so the last newline is restored explicitly — otherwise every run would leave a `\ No newline at end of file` diff behind and `--check` could never pass on a normal file. Line endings are normalized to LF, the same default as Prettier (`endOfLine: "lf"`).
+
 > **Hooks:** prefer formatting at the *end* of an agent turn (`Stop`) rather than right after every file write. Rewriting a file immediately after the agent wrote it invalidates the old text it may still try to edit.
 
 ## Settings

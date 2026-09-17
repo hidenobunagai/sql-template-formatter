@@ -194,4 +194,33 @@ describe('formatSql', () => {
       'SELECT\n  name,\n  age\nFROM\n  users\nGROUP BY\n  1,\n  2;'
     );
   });
+
+  test('keeps the trailing newline when the input has one', () => {
+    expect(formatSql('select id from users;\n', config)).toBe(
+      'SELECT\n  id\nFROM\n  users;\n'
+    );
+  });
+
+  test('collapses extra trailing newlines to one', () => {
+    expect(formatSql('select id from users;\n\n\n', config)).toBe(
+      'SELECT\n  id\nFROM\n  users;\n'
+    );
+  });
+
+  test('does not add a trailing newline when the input has none', () => {
+    expect(formatSql('select id from users;', config)).toBe(
+      'SELECT\n  id\nFROM\n  users;'
+    );
+  });
+
+  test('is idempotent for input with a trailing newline', () => {
+    const once = formatSql('select id, name from users where id = ${id};\n', config);
+    expect(formatSql(once, config)).toBe(once);
+  });
+
+  test('keeps the trailing newline for a placeholder-only addition', () => {
+    expect(formatSql('delete from t where id in (${ids});\n', config)).toBe(
+      'DELETE FROM t\nWHERE\n  id IN (${ids});\n'
+    );
+  });
 });

@@ -18,6 +18,7 @@ const FORMATTED = [
   'GROUP BY',
   '  id,',
   '  name;',
+  '',
 ].join('\n');
 const KEPT_ORDINALS = FORMATTED.replace('GROUP BY\n  id,\n  name;', 'GROUP BY\n  1,\n  2;');
 
@@ -69,6 +70,20 @@ describe('sql-template-formatter CLI', () => {
     const good = run(['--check', 'formatted.sql'], dir);
     expect(good.status).toBe(0);
     expect(good.stdout).toBe('');
+  });
+
+  test('preserves the trailing newline through --write', () => {
+    const target = path.join(dir, 'newline.sql');
+    writeFileSync(target, 'select 1;\n');
+    expect(run(['--write', 'newline.sql'], dir).status).toBe(0);
+    expect(readFileSync(target, 'utf8')).toBe('SELECT\n  1;\n');
+  });
+
+  test('does not add a trailing newline to a file without one', () => {
+    const target = path.join(dir, 'no-newline.sql');
+    writeFileSync(target, 'select 1;');
+    expect(run(['--write', 'no-newline.sql'], dir).status).toBe(0);
+    expect(readFileSync(target, 'utf8')).toBe('SELECT\n  1;');
   });
 
   test('--no-ordinals keeps GROUP BY ordinals', () => {
