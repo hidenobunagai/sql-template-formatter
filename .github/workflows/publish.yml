@@ -20,14 +20,19 @@ jobs:
 
       - run: bun install --frozen-lockfile --ignore-scripts
       - run: bun run compile && npx --yes @vscode/vsce package && python3 scripts/verify_vsix.py
+      # --skip-duplicate on both: the two registries fail independently (Open VSX
+      # can return 503 while the VS Code Marketplace succeeds), and neither allows
+      # republishing a version. Without the flag, re-running this job after such a
+      # partial failure would stop at the already-published registry and never
+      # reach the other one.
       - name: Publish to VS Code Marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx --yes @vscode/vsce publish --packagePath *.vsix -p "$VSCE_PAT"
+        run: npx --yes @vscode/vsce publish --packagePath *.vsix -p "$VSCE_PAT" --skip-duplicate
       - name: Publish to Open VSX
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: npx --yes ovsx publish *.vsix -p "$OVSX_PAT"
+        run: npx --yes ovsx publish *.vsix -p "$OVSX_PAT" --skip-duplicate
 
   # A separate job on purpose: the two registries fail independently (a VSIX
   # version cannot be republished, while npm can be retried on the next version),
