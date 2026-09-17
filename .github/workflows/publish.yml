@@ -32,7 +32,20 @@ jobs:
       - name: Publish to Open VSX
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
-        run: npx --yes ovsx publish *.vsix -p "$OVSX_PAT" --skip-duplicate
+        # Open VSX answers 503 intermittently (three times on 2026-09-17 across two
+        # repositories) and can even fail the request after accepting the upload.
+        # --skip-duplicate makes the retry harmless in that case: an
+        # already-published version reports success.
+        run: |
+          for attempt in 1 2 3 4; do
+            if npx --yes ovsx publish *.vsix -p "$OVSX_PAT" --skip-duplicate; then
+              exit 0
+            fi
+            echo "::warning::ovsx publish attempt $attempt failed; retrying in 30s"
+            sleep 30
+          done
+          echo "::error::ovsx publish failed after 4 attempts"
+          exit 1
 
   # A separate job on purpose: the two registries fail independently (a VSIX
   # version cannot be republished, while npm can be retried on the next version),
@@ -70,8 +83,22 @@ jobs:
           npm pack --dry-run 2>&1 | tee /tmp/npm-pack.txt
           grep -q "out/cli.js" /tmp/npm-pack.txt
           grep -q "out/ordinals.js" /tmp/npm-pack.txt
+      # Idempotent on purpose: re-running the workflow (for example to retry the
+      # marketplaces after an Open VSX 503) must not fail just because npm already
+      # has this version.
+      - name: Check whether this version is already on npm
+        id: npm-version
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if npm view "sql-template-formatter@${VERSION}" version >/dev/null 2>&1; then
+            echo "published=true" >>"$GITHUB_OUTPUT"
+            echo "sql-template-formatter@${VERSION} is already published"
+          else
+            echo "published=false" >>"$GITHUB_OUTPUT"
+          fi
       # No NODE_AUTH_TOKEN: npm exchanges the GitHub OIDC token for a short-lived
       # publish credential when a trusted publisher matches this workflow, and adds
       # provenance attestations automatically.
       - name: Publish to npm
+        if: steps.npm-version.outputs.published == 'false'
         run: npm publish --access public
