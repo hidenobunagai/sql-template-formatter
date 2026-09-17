@@ -9,3 +9,6 @@ out/
 .env
 .env.*
 !.env.example
+
+# npm pack artifact (bun pm pack / npm pack)
+*.tgz

@@ -15,7 +15,8 @@
     "url": "https://github.com/hidenobunagai/sql-template-formatter/issues"
   },
   "engines": {
-    "vscode": "^1.85.0"
+    "vscode": "^1.85.0",
+    "node": ">=18.3"
   },
   "categories": [
     "Formatters",
@@ -25,6 +26,12 @@
     "onLanguage:sql"
   ],
   "main": "./out/extension.js",
+  "bin": {
+    "sql-template-formatter": "./out/cli.js"
+  },
+  "files": [
+    "out"
+  ],
   "contributes": {
     "configuration": {
       "title": "SQL Template Formatter",
