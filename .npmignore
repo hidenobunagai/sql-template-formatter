@@ -1,0 +1,37 @@
+# npm publish inventory: only the compiled `out/` (+ package.json / README / LICENSE)
+# is published, so `npx sql-template-formatter` has everything it needs.
+#
+# This file exists because `.gitignore` ignores `out/`: npm falls back to
+# `.gitignore` when no `.npmignore` is present, which would ship a package with
+# no code. `files` in package.json is not an option here — VSCE refuses to
+# package an extension that has both a `.vscodeignore` and a `files` property.
+# Keep this list in sync with `.vscodeignore` (repo-only files stay repo-only).
+
+src/**
+test/**
+poc/**
+docs/**
+scripts/**
+scratch/**
+.vscode/**
+.vscode-test/**
+.github/**
+.superpowers/**
+.headroom/**
+**/*.map
+*.vsix
+*.tgz
+.vscodeignore
+.npmignore
+.gitignore
+bunfig.toml
+bun.lock
+tsconfig.json
+.mcp.json
+opencode.jsonc
+architecture.png
+architecture.html
+architecture.json
+icon.png
+how_it_works.png
+problem.png

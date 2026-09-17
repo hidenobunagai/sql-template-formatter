@@ -3,6 +3,19 @@
 Notable changes to the **SQL Template Formatter** VS Code extension.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **CLI** (`npx sql-template-formatter`): formats `.sql` files or stdin through the extension's own core (`src/format.ts` + `src/ordinals.ts`), so placeholders (`${var}`, `{{ var }}`, `%s`, `%(name)s`) and `GROUP BY` / `ORDER BY` ordinal replacement behave identically to the editor. Options: `--write`, `--check`, `--dialect`, `--keyword-case`, `--no-ordinals`, `--tab-width` / `--tabs`, `--config`; the nearest `.sql-formatter.json` is discovered automatically. Registered as the package `bin`, so it is usable from npm, CI, pre-commit, and AI-agent hooks.
+- `.npmignore`: publishes only `out/` (plus package.json / README / CHANGELOG / LICENSE). It is required because `.gitignore` ignores `out/` and npm falls back to `.gitignore` — while `files` in package.json cannot be used here, since VSCE aborts on an extension that has both a `.vscodeignore` and a `files` property.
+- `test/cli.test.ts`: 9 end-to-end cases driving the built CLI (file → stdout, stdin, `--write` idempotence, `--check` exit codes, `--no-ordinals`, `.sql-formatter.json` discovery, unknown dialect, missing file argument, `--version`).
+- `Publish` workflow: npm publish step, skipped until the `NPM_TOKEN` secret is set so tag releases keep working meanwhile.
+
+### Changed
+
+- README: new "CLI" section (usage, options, config file) plus a hook note — format at the end of an agent turn rather than right after every write, because rewriting a file the agent just wrote invalidates text it may still try to edit.
+
 ## [0.0.10] - 2026-09-13
 
 First release published by the tag-triggered `Publish` workflow (VS Code Marketplace + Open VSX).

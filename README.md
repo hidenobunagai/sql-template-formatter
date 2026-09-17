@@ -5,6 +5,7 @@
 [![Open VSX Version](https://img.shields.io/open-vsx/v/HidenobuNagai/sql-template-formatter?label=Open%20VSX)](https://open-vsx.org/extension/HidenobuNagai/sql-template-formatter)
 
 A VS Code extension that formats `.sql` files containing template placeholders (common in Python projects) without breaking them. Existing SQL formatters treat `${XXX}` as a syntax error; this one does not.
+The same formatter also ships as a **CLI** (`npx sql-template-formatter`) for CI, pre-commit, and AI-agent hooks — it calls the identical core, so both produce byte-identical output.
 
 ## Features
 
@@ -38,6 +39,46 @@ This extension conflicts with other SQL formatter extensions. When using it, set
   }
 }
 ```
+
+## CLI
+
+Same formatter, no editor required — useful in CI, pre-commit, and AI-agent hooks.
+
+```bash
+npx sql-template-formatter query.sql              # file → stdout
+npx sql-template-formatter --write query.sql      # rewrite in place
+npx sql-template-formatter < query.sql            # stdin → stdout
+npx sql-template-formatter --check sql/*.sql      # exit 1 if not formatted (CI)
+
+# pre-commit / agent hook (GNU xargs): format only the .sql files that changed
+git diff --name-only --diff-filter=ACM -- '*.sql' | xargs -r sql-template-formatter --write
+```
+
+| Option | Description |
+|---|---|
+| `-w`, `--write` | Rewrite files in place |
+| `--check` | Exit 1 if any input is not already formatted |
+| `-l`, `--dialect <name>` | SQL dialect (default: `postgresql`) |
+| `-k`, `--keyword-case <c>` | `upper` / `lower` / `preserve` (default: `upper`) |
+| `--no-ordinals` | Keep `GROUP BY 1` / `ORDER BY 1` as-is |
+| `--tab-width <n>`, `--tabs` | Indentation (default: 2 spaces) |
+| `-c`, `--config <file>` | Config JSON (default: the nearest `.sql-formatter.json`) |
+| `-h`, `--help`, `--version` | |
+
+The nearest ancestor `.sql-formatter.json` is picked up automatically. It accepts the standard `sql-formatter` keys (`language`, `keywordCase`, `tabWidth`, `useTabs`, `paramTypes.custom`) plus `placeholderPatterns` and `replaceOrdinals`:
+
+```json
+{
+  "language": "postgresql",
+  "keywordCase": "upper",
+  "placeholderPatterns": ["\\$\\{[^}]+\\}", "\\{\\{[\\s\\S]*?\\}\\}", "\\{[^{}]*\\}", "%\\([^)]*\\)s", "%s"],
+  "replaceOrdinals": true
+}
+```
+
+When neither `placeholderPatterns` nor `paramTypes.custom` is set, the extension's five default patterns apply, so placeholders survive untouched. The CLI does not read VS Code's `settings.json`; its defaults match the extension's defaults (`postgresql` + `upper` + ordinals replaced).
+
+> **Hooks:** prefer formatting at the *end* of an agent turn (`Stop`) rather than right after every file write. Rewriting a file immediately after the agent wrote it invalidates the old text it may still try to edit.
 
 ## Settings
 
@@ -78,6 +119,7 @@ This extension conflicts with other SQL formatter extensions. When using it, set
 bun install
 bun run compile   # tsc build
 bun test          # unit tests (bun:test)
+node out/cli.js --help   # run the CLI from the build output
 bun run package   # build .vsix
 ```
 
@@ -86,8 +128,12 @@ Press F5 to launch an Extension Development Host for manual testing.
 ## Release (maintainers)
 
 1. Bump the version in `package.json` and tag it: `git tag vX.Y.Z`
-2. VS Marketplace: run `bun run publish` with `VSCE_PAT` set
-3. Open VSX: run `bunx ovsx publish -p $OVSX_PAT` with `OVSX_PAT` set
+2. Push the tag: `.github/workflows/publish.yml` publishes to the VS Code Marketplace (VSCE), Open VSX (OVSX), and npm.
+   The npm step needs an `NPM_TOKEN` repository secret (npm granular access token with publish rights); until it is set, that step is skipped and the other two still run.
+3. Manual alternative:
+   - VS Marketplace: run `bun run publish` with `VSCE_PAT` set
+   - Open VSX: run `bunx ovsx publish -p $OVSX_PAT` with `OVSX_PAT` set
+   - npm: run `npm publish --access public` with `NODE_AUTH_TOKEN` set
 
 Never commit PATs in plain text. Manage them with dotenvx or similar.
 

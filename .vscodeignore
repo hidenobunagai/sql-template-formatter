@@ -6,6 +6,7 @@ poc/**
 docs/**
 **/*.map
 .gitignore
+.npmignore
 .git/**
 .github/**
 bunfig.toml

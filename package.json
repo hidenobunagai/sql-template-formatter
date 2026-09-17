@@ -29,9 +29,6 @@
   "bin": {
     "sql-template-formatter": "./out/cli.js"
   },
-  "files": [
-    "out"
-  ],
   "contributes": {
     "configuration": {
       "title": "SQL Template Formatter",
