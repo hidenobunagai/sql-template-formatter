@@ -84,7 +84,7 @@
     "test": "bun test",
     "package": "vsce package && python3 scripts/verify_vsix.py",
     "verify:vsix": "python3 scripts/verify_vsix.py",
-    "publish": "vsce publish"
+    "publish:vsce": "vsce publish"
   },
   "dependencies": {
     "sql-formatter": "^15.4.0"

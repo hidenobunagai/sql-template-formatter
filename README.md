@@ -133,7 +133,8 @@ Press F5 to launch an Extension Development Host for manual testing.
 2. Push the tag: `.github/workflows/publish.yml` publishes to the VS Code Marketplace (VSCE), Open VSX (OVSX), and npm.
    The npm step needs an `NPM_TOKEN` repository secret (npm granular access token with publish rights); until it is set, that step is skipped and the other two still run.
 3. Manual alternative:
-   - VS Marketplace: run `bun run publish` with `VSCE_PAT` set
+   - VS Marketplace: run `bun run publish:vsce` with `VSCE_PAT` set
+     (the script is deliberately **not** named `publish`: npm runs a `publish` script as a lifecycle step of `npm publish`, so it would fire again on every npm release and fail without `VSCE_PAT`)
    - Open VSX: run `bunx ovsx publish -p $OVSX_PAT` with `OVSX_PAT` set
    - npm: run `npm publish --access public` with `NODE_AUTH_TOKEN` set
 
