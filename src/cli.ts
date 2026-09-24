@@ -19,6 +19,7 @@ interface FileConfig {
   useTabs?: boolean;
   replaceOrdinals?: boolean;
   commaPosition?: string;
+  keepFunctionsInline?: boolean;
   placeholderPatterns?: string[];
   paramTypes?: { custom?: Array<{ regex: string }> };
 }
@@ -35,6 +36,7 @@ Options:
   -k, --keyword-case <c>   upper | lower | preserve (default: upper)
       --no-ordinals        Keep GROUP BY 1 / ORDER BY 1 ordinals as-is
       --comma-position <p> after | before (default: after)
+      --keep-functions-inline  Keep SUM(...) / COUNT(CASE ...) on one line
       --tab-width <n>      Indent width (default: 2)
       --tabs               Indent with tabs
   -c, --config <file>      Config JSON (default: nearest ${CONFIG_FILENAME})
@@ -69,6 +71,8 @@ function buildConfig(
     keywordCase: (values['keyword-case'] as string) ?? fileConfig.keywordCase ?? 'upper',
     replaceOrdinals: !values['no-ordinals'] && (fileConfig.replaceOrdinals ?? true),
     commaPosition: (values['comma-position'] as string) ?? fileConfig.commaPosition ?? 'after',
+    keepFunctionsInline:
+      values['keep-functions-inline'] === true || (fileConfig.keepFunctionsInline ?? false),
   };
 }
 
@@ -83,6 +87,7 @@ function main(): number {
         'keyword-case': { type: 'string', short: 'k' },
         'no-ordinals': { type: 'boolean', default: false },
         'comma-position': { type: 'string' },
+        'keep-functions-inline': { type: 'boolean', default: false },
         'tab-width': { type: 'string' },
         tabs: { type: 'boolean', default: false },
         config: { type: 'string', short: 'c' },

@@ -113,6 +113,17 @@ describe('sql-template-formatter CLI', () => {
     }
   });
 
+  test('--keep-functions-inline keeps CASE inside a function on one line', () => {
+    const input = 'select count(case when a then 1 else 0 end) as n from t;\n';
+    const joined = run(['--keep-functions-inline'], dir, input);
+    expect(joined.status).toBe(0);
+    expect(joined.stdout).toBe('SELECT\n  count(CASE WHEN a THEN 1 ELSE 0 END) AS n\nFROM\n  t;\n');
+
+    const wrapped = run([], dir, input);
+    expect(wrapped.status).toBe(0);
+    expect(wrapped.stdout).toContain('count(\n');
+  });
+
   test('honors .sql-formatter.json found in a parent directory', () => {
     const root = mkdtempSync(path.join(tmpdir(), 'sql-template-formatter-config-'));
     try {

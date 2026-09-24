@@ -3,6 +3,12 @@
 Notable changes to the **SQL Template Formatter** VS Code extension.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`keepFunctionsInline` (default `false`)** — re-joins the line breaks sql-formatter inserts inside `word(...)` groups so `SUM(...)`, `COUNT(CASE … END)`, and nested calls stay on one line. sql-formatter has no option for this and breaks `CASE` structurally regardless of `expressionWidth`, so the re-join runs as a post-pass: it removes only code-state newlines, copying string literals, `$$…$$` bodies, and comment interiors verbatim, and the newline that terminates a `-- comment` is kept so no commented-out code can result. Available as the VS Code setting `sqlTemplateFormatter.keepFunctionsInline`, the CLI flag `--keep-functions-inline`, and a `keepFunctionsInline` key in `.sql-formatter.json`.
+
 ## [0.0.13] - 2026-09-24
 
 ### Added

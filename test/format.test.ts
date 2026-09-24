@@ -14,6 +14,7 @@ const config: FormatterConfig = {
   keywordCase: 'upper',
   replaceOrdinals: true,
   commaPosition: 'after',
+  keepFunctionsInline: false,
 };
 
 describe('formatSql', () => {
@@ -262,6 +263,64 @@ describe('formatSql', () => {
   test('is idempotent when commaPosition is before', () => {
     const cfg = { ...config, commaPosition: 'before' };
     const once = formatSql('select id, name from users where id = ${id};\n', cfg);
+    expect(formatSql(once, cfg)).toBe(once);
+  });
+
+  test('breaks long function arguments by default', () => {
+    expect(
+      formatSql(
+        'SELECT COALESCE(first_name, middle_name, last_name, display_name, email) AS name FROM users;',
+        config
+      )
+    ).toBe(
+      'SELECT\n  COALESCE(\n    first_name,\n    middle_name,\n    last_name,\n    display_name,\n    email\n  ) AS name\nFROM\n  users;'
+    );
+  });
+
+  test('keeps long function arguments on one line when keepFunctionsInline', () => {
+    const cfg = { ...config, keepFunctionsInline: true };
+    expect(
+      formatSql(
+        'SELECT COALESCE(first_name, middle_name, last_name, display_name, email) AS name FROM users;',
+        cfg
+      )
+    ).toBe(
+      'SELECT\n  COALESCE(first_name, middle_name, last_name, display_name, email) AS name\nFROM\n  users;'
+    );
+  });
+
+  test('keeps CASE inside a function on one line when keepFunctionsInline', () => {
+    const cfg = { ...config, keepFunctionsInline: true };
+    expect(formatSql('SELECT COUNT(CASE WHEN a THEN 1 ELSE 0 END) AS n FROM t;', cfg)).toBe(
+      'SELECT\n  COUNT(CASE WHEN a THEN 1 ELSE 0 END) AS n\nFROM\n  t;'
+    );
+  });
+
+  test('keeps nested calls on one line when keepFunctionsInline', () => {
+    const cfg = { ...config, keepFunctionsInline: true };
+    expect(
+      formatSql(
+        'SELECT MAX(LEAST(COALESCE(discount_amount, standard_discount), price_cap)) AS capped FROM orders;',
+        cfg
+      )
+    ).toBe(
+      'SELECT\n  MAX(LEAST(COALESCE(discount_amount, standard_discount), price_cap)) AS capped\nFROM\n  orders;'
+    );
+  });
+
+  test('never removes newlines inside strings or comments when keepFunctionsInline', () => {
+    const cfg = { ...config, keepFunctionsInline: true };
+    expect(formatSql('SELECT SUM(a -- note\n) AS x FROM t;', cfg)).toBe(
+      'SELECT\n  SUM(a -- note\n  ) AS x\nFROM\n  t;'
+    );
+    expect(formatSql("SELECT SUM('line1,\nline2') AS x FROM t;", cfg)).toBe(
+      "SELECT\n  SUM('line1,\nline2') AS x\nFROM\n  t;"
+    );
+  });
+
+  test('is idempotent when keepFunctionsInline', () => {
+    const cfg = { ...config, keepFunctionsInline: true };
+    const once = formatSql('select count(case when a then 1 else 0 end) as n from t;\n', cfg);
     expect(formatSql(once, cfg)).toBe(once);
   });
 });

@@ -19,6 +19,8 @@ export interface FormatterConfig {
   replaceOrdinals: boolean;
   /** Where a wrapping comma sits: 'after' (end of the previous line, default) or 'before' (start of the next line). */
   commaPosition: string;
+  /** Re-join formatter-inserted line breaks inside word(...) groups so SUM(...) stays on one line. */
+  keepFunctionsInline: boolean;
 }
 
 export const DEFAULT_PLACEHOLDER_PATTERNS = [
@@ -151,6 +153,128 @@ function moveCommasToLineStarts(text: string): string {
   return lines.join('\n');
 }
 
+/**
+ * Re-join the line breaks sql-formatter inserts inside `word(...)` groups so
+ * `SUM(...)`, `COUNT(CASE … END)`, and friends stay on one line
+ * (`keepFunctionsInline: true`).
+ *
+ * Only newlines in code state are removed; a newline inside a string, a
+ * dollar quote, a block comment, or the line comment it terminates is copied
+ * verbatim, so literal content and comment bodies are never rewritten.
+ * ponytail: any `word (` opener counts as a function — `IN (…)` groups
+ * collapse too, and there is no keyword blacklist.
+ */
+function rejoinFunctionCalls(text: string): string {
+  const stack: boolean[] = []; // per open paren: true when a word(...) call owns it
+  let out = '';
+  let i = 0;
+
+  const isCallOpener = (): boolean => {
+    const match = /[A-Za-z_][A-Za-z0-9_]*\s*$/.exec(out);
+    if (match === null) return false;
+    const before = out.slice(0, match.index);
+    return before === '' || !/[A-Za-z0-9_]$/.test(before);
+  };
+
+  while (i < text.length) {
+    const ch = text[i];
+    if (ch === "'" || ch === '"' || ch === '`') {
+      const quote = ch;
+      out += ch;
+      i += 1;
+      while (i < text.length) {
+        if (text[i] === quote && text[i + 1] === quote) {
+          out += text[i] + text[i + 1];
+          i += 2;
+          continue;
+        }
+        out += text[i];
+        i += 1;
+        if (text[i - 1] === quote) break;
+        if (text[i - 1] === '\\' && quote !== '`' && i < text.length) {
+          out += text[i];
+          i += 1;
+        }
+      }
+      continue;
+    }
+    if (ch === '$') {
+      DOLLAR_QUOTE.lastIndex = i;
+      const dollar = DOLLAR_QUOTE.exec(text);
+      if (dollar !== null) {
+        const end = text.indexOf(dollar[0], i + dollar[0].length);
+        const stop = end === -1 ? text.length : end + dollar[0].length;
+        out += text.slice(i, stop);
+        i = stop;
+        continue;
+      }
+    }
+    if ((ch === '-' && text[i + 1] === '-') || ch === '#') {
+      while (i < text.length && text[i] !== '\n') {
+        out += text[i];
+        i += 1;
+      }
+      if (i < text.length) {
+        out += text[i]; // the newline ending a line comment stays verbatim
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === '/' && text[i + 1] === '*') {
+      out += '/*';
+      i += 2;
+      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) {
+        out += text[i];
+        i += 1;
+      }
+      if (i < text.length) {
+        out += '*/';
+        i += 2;
+      }
+      continue;
+    }
+    if (ch === '\n') {
+      if (stack.includes(true)) {
+        let indent = i + 1;
+        while (indent < text.length && (text[indent] === ' ' || text[indent] === '\t')) {
+          indent += 1;
+        }
+        let peek = indent;
+        while (
+          peek < text.length &&
+          (text[peek] === '\n' || text[peek] === ' ' || text[peek] === '\t')
+        ) {
+          peek += 1;
+        }
+        const next = text[peek];
+        const prev = out.slice(-1);
+        i = indent; // swallow this newline and its indent
+        // `(` and `,`/`)` need no separating space; everything else does.
+        if (prev !== '(' && next !== ',' && next !== ')') out += ' ';
+      } else {
+        out += ch;
+        i += 1;
+      }
+      continue;
+    }
+    if (ch === '(') {
+      stack.push(isCallOpener());
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === ')') {
+      stack.pop();
+      out += ch;
+      i += 1;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
 export function formatSql(
   sql: string,
   config: FormatterConfig,
@@ -171,7 +295,8 @@ export function formatSql(
     paramTypes,
   });
   const result = config.replaceOrdinals ? replaceOrdinals(formatted) : formatted;
-  const placed = config.commaPosition === 'before' ? moveCommasToLineStarts(result) : result;
+  const joined = config.keepFunctionsInline ? rejoinFunctionCalls(result) : result;
+  const placed = config.commaPosition === 'before' ? moveCommasToLineStarts(joined) : joined;
   // sql-formatter re-prints the parse tree, so the final newline belongs to no
   // statement and gets dropped. Restore it when the input had one: a formatter
   // must not add or remove the file's last byte, or every run leaves a

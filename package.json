@@ -83,6 +83,11 @@
           ],
           "default": "after",
           "description": "Where the comma of a wrapped item sits: \"after\" keeps it at the end of the previous line, \"before\" moves it to the start of the next line."
+        },
+        "sqlTemplateFormatter.keepFunctionsInline": {
+          "type": "boolean",
+          "default": false,
+          "description": "Keep function calls (SUM(...), COUNT(CASE ... END), ...) on a single line instead of breaking their arguments across lines."
         }
       }
     }

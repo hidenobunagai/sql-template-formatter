@@ -62,11 +62,12 @@ git diff --name-only --diff-filter=ACM -- '*.sql' | xargs -r sql-template-format
 | `-k`, `--keyword-case <c>` | `upper` / `lower` / `preserve` (default: `upper`) |
 | `--no-ordinals` | Keep `GROUP BY 1` / `ORDER BY 1` as-is |
 | `--comma-position <p>` | `after` (default) keeps a wrapping comma at the end of the previous line; `before` moves it to the start of the next line |
+| `--keep-functions-inline` | Keep `SUM(...)` / `COUNT(CASE ... END)` on one line instead of breaking their arguments |
 | `--tab-width <n>`, `--tabs` | Indentation (default: 2 spaces) |
 | `-c`, `--config <file>` | Config JSON (default: the nearest `.sql-formatter.json`) |
 | `-h`, `--help`, `--version` | |
 
-The nearest ancestor `.sql-formatter.json` is picked up automatically. It accepts the standard `sql-formatter` keys (`language`, `keywordCase`, `tabWidth`, `useTabs`, `paramTypes.custom`) plus `placeholderPatterns`, `replaceOrdinals`, and `commaPosition`:
+The nearest ancestor `.sql-formatter.json` is picked up automatically. It accepts the standard `sql-formatter` keys (`language`, `keywordCase`, `tabWidth`, `useTabs`, `paramTypes.custom`) plus `placeholderPatterns`, `replaceOrdinals`, `commaPosition`, and `keepFunctionsInline`:
 
 ```json
 {
@@ -74,7 +75,8 @@ The nearest ancestor `.sql-formatter.json` is picked up automatically. It accept
   "keywordCase": "upper",
   "placeholderPatterns": ["\\$\\{[^}]+\\}", "\\{\\{[\\s\\S]*?\\}\\}", "\\{[^{}]*\\}", "%\\([^)]*\\)s", "%s"],
   "replaceOrdinals": true,
-  "commaPosition": "after"
+  "commaPosition": "after",
+  "keepFunctionsInline": false
 }
 ```
 
@@ -94,6 +96,7 @@ The file's final newline is **preserved**: a newline-terminated file stays newli
 | `sqlTemplateFormatter.keywordCase` | `upper` | Keyword casing (preserve/upper/lower) |
 | `sqlTemplateFormatter.replaceOrdinals` | `true` | Replace `GROUP BY`/`ORDER BY` ordinals (e.g. `1, 2`) with the referenced column names. Ordinals referencing placeholder expressions, aggregates without alias, or `SELECT *` are left untouched |
 | `sqlTemplateFormatter.commaPosition` | `after` | `after` keeps a wrapping comma at the end of the previous line; `before` moves it to the start of the next line (`id` / `    , name`), keeping a trailing `-- comment` with its own item |
+| `sqlTemplateFormatter.keepFunctionsInline` | `false` | Re-join the formatter's line breaks inside `word(...)` groups so `SUM(...)`, `COUNT(CASE … END)`, and nested calls stay on one line. Newlines inside string literals, `$$…$$` bodies, and comments are never removed |
 
 ### Customizing placeholders
 

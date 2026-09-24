@@ -10,6 +10,7 @@ function getConfig(): FormatterConfig {
     keywordCase: c.get<string>('keywordCase', 'upper'),
     replaceOrdinals: c.get<boolean>('replaceOrdinals', true),
     commaPosition: c.get<string>('commaPosition', 'after'),
+    keepFunctionsInline: c.get<boolean>('keepFunctionsInline', false),
   };
 }
 
