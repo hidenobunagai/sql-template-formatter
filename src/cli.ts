@@ -18,6 +18,7 @@ interface FileConfig {
   tabWidth?: number;
   useTabs?: boolean;
   replaceOrdinals?: boolean;
+  commaPosition?: string;
   placeholderPatterns?: string[];
   paramTypes?: { custom?: Array<{ regex: string }> };
 }
@@ -33,6 +34,7 @@ Options:
   -l, --dialect <name>     SQL dialect (default: postgresql)
   -k, --keyword-case <c>   upper | lower | preserve (default: upper)
       --no-ordinals        Keep GROUP BY 1 / ORDER BY 1 ordinals as-is
+      --comma-position <p> after | before (default: after)
       --tab-width <n>      Indent width (default: 2)
       --tabs               Indent with tabs
   -c, --config <file>      Config JSON (default: nearest ${CONFIG_FILENAME})
@@ -66,6 +68,7 @@ function buildConfig(
     namedPrefixes: [],
     keywordCase: (values['keyword-case'] as string) ?? fileConfig.keywordCase ?? 'upper',
     replaceOrdinals: !values['no-ordinals'] && (fileConfig.replaceOrdinals ?? true),
+    commaPosition: (values['comma-position'] as string) ?? fileConfig.commaPosition ?? 'after',
   };
 }
 
@@ -79,6 +82,7 @@ function main(): number {
         dialect: { type: 'string', short: 'l' },
         'keyword-case': { type: 'string', short: 'k' },
         'no-ordinals': { type: 'boolean', default: false },
+        'comma-position': { type: 'string' },
         'tab-width': { type: 'string' },
         tabs: { type: 'boolean', default: false },
         config: { type: 'string', short: 'c' },

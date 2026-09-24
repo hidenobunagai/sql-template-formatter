@@ -61,18 +61,20 @@ git diff --name-only --diff-filter=ACM -- '*.sql' | xargs -r sql-template-format
 | `-l`, `--dialect <name>` | SQL dialect (default: `postgresql`) |
 | `-k`, `--keyword-case <c>` | `upper` / `lower` / `preserve` (default: `upper`) |
 | `--no-ordinals` | Keep `GROUP BY 1` / `ORDER BY 1` as-is |
+| `--comma-position <p>` | `after` (default) keeps a wrapping comma at the end of the previous line; `before` moves it to the start of the next line |
 | `--tab-width <n>`, `--tabs` | Indentation (default: 2 spaces) |
 | `-c`, `--config <file>` | Config JSON (default: the nearest `.sql-formatter.json`) |
 | `-h`, `--help`, `--version` | |
 
-The nearest ancestor `.sql-formatter.json` is picked up automatically. It accepts the standard `sql-formatter` keys (`language`, `keywordCase`, `tabWidth`, `useTabs`, `paramTypes.custom`) plus `placeholderPatterns` and `replaceOrdinals`:
+The nearest ancestor `.sql-formatter.json` is picked up automatically. It accepts the standard `sql-formatter` keys (`language`, `keywordCase`, `tabWidth`, `useTabs`, `paramTypes.custom`) plus `placeholderPatterns`, `replaceOrdinals`, and `commaPosition`:
 
 ```json
 {
   "language": "postgresql",
   "keywordCase": "upper",
   "placeholderPatterns": ["\\$\\{[^}]+\\}", "\\{\\{[\\s\\S]*?\\}\\}", "\\{[^{}]*\\}", "%\\([^)]*\\)s", "%s"],
-  "replaceOrdinals": true
+  "replaceOrdinals": true,
+  "commaPosition": "after"
 }
 ```
 
@@ -91,6 +93,7 @@ The file's final newline is **preserved**: a newline-terminated file stays newli
 | `sqlTemplateFormatter.namedPrefixes` | `[]` | Prefixes for named parameters (e.g. `[":"]`). Compatible with `::` casts |
 | `sqlTemplateFormatter.keywordCase` | `upper` | Keyword casing (preserve/upper/lower) |
 | `sqlTemplateFormatter.replaceOrdinals` | `true` | Replace `GROUP BY`/`ORDER BY` ordinals (e.g. `1, 2`) with the referenced column names. Ordinals referencing placeholder expressions, aggregates without alias, or `SELECT *` are left untouched |
+| `sqlTemplateFormatter.commaPosition` | `after` | `after` keeps a wrapping comma at the end of the previous line; `before` moves it to the start of the next line (`id` / `    , name`), keeping a trailing `-- comment` with its own item |
 
 ### Customizing placeholders
 

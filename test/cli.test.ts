@@ -92,6 +92,27 @@ describe('sql-template-formatter CLI', () => {
     expect(result.stdout).toBe(KEPT_ORDINALS);
   });
 
+  test('--comma-position before leads the wrapped line with the comma', () => {
+    const LEADING = FORMATTED.replace('  id,\n  name\n', '  id\n  , name\n').replace(
+      '  id,\n  name;',
+      '  id\n  , name;'
+    );
+    const result = run(['--comma-position', 'before', 'unformatted.sql'], dir);
+    expect(result.status).toBe(0);
+    expect(result.stdout).toBe(LEADING);
+
+    const configRoot = mkdtempSync(path.join(tmpdir(), 'sql-template-formatter-comma-'));
+    try {
+      writeFileSync(path.join(configRoot, '.sql-formatter.json'), JSON.stringify({ commaPosition: 'before' }));
+      writeFileSync(path.join(configRoot, 'q.sql'), INPUT);
+      const fromConfig = run(['q.sql'], configRoot);
+      expect(fromConfig.status).toBe(0);
+      expect(fromConfig.stdout).toBe(LEADING);
+    } finally {
+      rmSync(configRoot, { recursive: true, force: true });
+    }
+  });
+
   test('honors .sql-formatter.json found in a parent directory', () => {
     const root = mkdtempSync(path.join(tmpdir(), 'sql-template-formatter-config-'));
     try {

@@ -3,6 +3,12 @@
 Notable changes to the **SQL Template Formatter** VS Code extension.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Added
+
+- **`commaPosition` (`after` | `before`, default `after`)** — chooses where the comma of a wrapped item sits. The default reproduces the previous output byte for byte; `before` moves the comma to the start of the next line (`id` / `    , name`) and keeps a trailing `-- comment` with its own item. Available as the VS Code setting `sqlTemplateFormatter.commaPosition`, the CLI flag `--comma-position`, and a `commaPosition` key in `.sql-formatter.json`. Because this formatter has no reformat-until-stable gate, the mover scans the whole text carrying string, dollar-quote, and comment state across line breaks: a comma inside a multi-line `'…'`, a `$$…$$` body, or a comment is never moved.
+
 ## [0.0.12] - 2026-09-18
 
 Publish-pipeline hardening: the three registries (VS Code Marketplace, Open VSX, npm) now fail and retry independently, so a partial failure can be re-run instead of burning a version. **No formatter behavior changes** — `src/` and `test/` are untouched since v0.0.11.

@@ -9,6 +9,7 @@ function getConfig(): FormatterConfig {
     namedPrefixes: c.get<string[]>('namedPrefixes', []),
     keywordCase: c.get<string>('keywordCase', 'upper'),
     replaceOrdinals: c.get<boolean>('replaceOrdinals', true),
+    commaPosition: c.get<string>('commaPosition', 'after'),
   };
 }
 

@@ -74,6 +74,15 @@
           "type": "boolean",
           "default": true,
           "description": "Replace GROUP BY / ORDER BY ordinal numbers (e.g. GROUP BY 1, 2) with the referenced column names."
+        },
+        "sqlTemplateFormatter.commaPosition": {
+          "type": "string",
+          "enum": [
+            "after",
+            "before"
+          ],
+          "default": "after",
+          "description": "Where the comma of a wrapped item sits: \"after\" keeps it at the end of the previous line, \"before\" moves it to the start of the next line."
         }
       }
     }
