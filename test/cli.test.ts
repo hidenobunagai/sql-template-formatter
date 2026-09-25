@@ -93,9 +93,9 @@ describe('sql-template-formatter CLI', () => {
   });
 
   test('--comma-position before leads the wrapped line with the comma', () => {
-    const LEADING = FORMATTED.replace('  id,\n  name\n', '  id\n  , name\n').replace(
+    const LEADING = FORMATTED.replace('  id,\n  name\n', '  id\n  ,name\n').replace(
       '  id,\n  name;',
-      '  id\n  , name;'
+      '  id\n  ,name;'
     );
     const result = run(['--comma-position', 'before', 'unformatted.sql'], dir);
     expect(result.status).toBe(0);

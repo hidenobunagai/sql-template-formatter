@@ -3,6 +3,12 @@
 Notable changes to the **SQL Template Formatter** VS Code extension.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Changed
+
+- **`commaPosition: "before"` now emits the moved comma without a following space** (`id` / `    ,name` instead of `, name`), per user feedback. The default `after` output is unaffected.
+
 ## [0.0.14] - 2026-09-24
 
 ### Added

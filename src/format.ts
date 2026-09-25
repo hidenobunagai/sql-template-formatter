@@ -148,7 +148,7 @@ function moveCommasToLineStarts(text: string): string {
     if (current === undefined || next === undefined) continue;
     lines[move.line] = `${current.slice(0, move.column)}${current.slice(move.column + 1)}`.trimEnd();
     const indent = /^[ \t]*/.exec(next)?.[0] ?? '';
-    lines[move.line + 1] = `${indent}, ${next.slice(indent.length)}`;
+    lines[move.line + 1] = `${indent},${next.slice(indent.length)}`;
   }
   return lines.join('\n');
 }

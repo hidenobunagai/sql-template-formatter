@@ -95,7 +95,7 @@ The file's final newline is **preserved**: a newline-terminated file stays newli
 | `sqlTemplateFormatter.namedPrefixes` | `[]` | Prefixes for named parameters (e.g. `[":"]`). Compatible with `::` casts |
 | `sqlTemplateFormatter.keywordCase` | `upper` | Keyword casing (preserve/upper/lower) |
 | `sqlTemplateFormatter.replaceOrdinals` | `true` | Replace `GROUP BY`/`ORDER BY` ordinals (e.g. `1, 2`) with the referenced column names. Ordinals referencing placeholder expressions, aggregates without alias, or `SELECT *` are left untouched |
-| `sqlTemplateFormatter.commaPosition` | `after` | `after` keeps a wrapping comma at the end of the previous line; `before` moves it to the start of the next line (`id` / `    , name`), keeping a trailing `-- comment` with its own item |
+| `sqlTemplateFormatter.commaPosition` | `after` | `after` keeps a wrapping comma at the end of the previous line; `before` moves it to the start of the next line with no space after it (`id` / `    ,name`), keeping a trailing `-- comment` with its own item |
 | `sqlTemplateFormatter.keepFunctionsInline` | `false` | Re-join the formatter's line breaks inside `word(...)` groups so `SUM(...)`, `COUNT(CASE … END)`, and nested calls stay on one line. Newlines inside string literals, `$$…$$` bodies, and comments are never removed |
 
 ### Customizing placeholders
