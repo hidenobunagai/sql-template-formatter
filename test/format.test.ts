@@ -235,21 +235,21 @@ describe('formatSql', () => {
   test('moves wrapping commas to the next line when commaPosition is before', () => {
     const cfg = { ...config, commaPosition: 'before' };
     expect(formatSql('SELECT id, name FROM users WHERE id = ${uid};', cfg)).toBe(
-      'SELECT\n  id\n  ,name\nFROM\n  users\nWHERE\n  id = ${uid};'
+      'SELECT\n  id\n  , name\nFROM\n  users\nWHERE\n  id = ${uid};'
     );
   });
 
   test('keeps trailing comments with their item when commaPosition is before', () => {
     const cfg = { ...config, commaPosition: 'before' };
     expect(formatSql('SELECT order_id, -- c\norder_date, -- c\namount FROM t;', cfg)).toBe(
-      'SELECT\n  order_id -- c\n  ,order_date -- c\n  ,amount\nFROM\n  t;'
+      'SELECT\n  order_id -- c\n  , order_date -- c\n  , amount\nFROM\n  t;'
     );
   });
 
   test('leaves a comma inside a multi-line string literal alone', () => {
     const cfg = { ...config, commaPosition: 'before' };
     expect(formatSql("SELECT 'keep,\nme' AS x, y FROM t;", cfg)).toBe(
-      "SELECT\n  'keep,\nme' AS x\n  ,y\nFROM\n  t;"
+      "SELECT\n  'keep,\nme' AS x\n  , y\nFROM\n  t;"
     );
   });
 
