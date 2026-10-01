@@ -161,6 +161,54 @@ describe('sql-template-formatter CLI', () => {
     }
   });
 
+  test('a missing file is an error (2), not an unformatted file (1)', () => {
+    const result = run(['--check', 'formatted.sql', 'missing.sql', 'unformatted.sql'], dir);
+    expect(result.status).toBe(2);
+    expect(result.stderr).toContain('sql-template-formatter: missing.sql: ENOENT');
+    expect(result.stderr).toContain('unformatted.sql is not formatted');
+    expect(result.stderr).not.toContain('    at ');
+  });
+
+  test('a stdin parse error exits 2 without a stack trace', () => {
+    const result = run([], dir, "select 'abc;");
+    expect(result.status).toBe(2);
+    expect(result.stderr).toStartWith('sql-template-formatter: <stdin>: ');
+    expect(result.stderr).not.toContain('    at ');
+  });
+
+  test('uses the config nearest to each file, not to the working directory', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'sql-template-formatter-perfile-'));
+    try {
+      mkdirSync(path.join(root, 'lower'));
+      writeFileSync(path.join(root, 'lower', '.sql-formatter.json'), JSON.stringify({ keywordCase: 'lower' }));
+      writeFileSync(path.join(root, 'lower', 'q.sql'), 'select 1;\n');
+      writeFileSync(path.join(root, 'q.sql'), 'select 1;\n');
+      const result = run(['lower/q.sql', 'q.sql'], root);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe('select\n  1;\nSELECT\n  1;\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('--named-prefix and namedPrefixes enable named parameters', () => {
+    const input = 'select x::text from t where id = :id;\n';
+    const expected = 'SELECT\n  x::text\nFROM\n  t\nWHERE\n  id = :id;\n';
+    const flag = run(['--named-prefix', ':'], dir, input);
+    expect(flag.status).toBe(0);
+    expect(flag.stdout).toBe(expected);
+
+    const root = mkdtempSync(path.join(tmpdir(), 'sql-template-formatter-named-'));
+    try {
+      writeFileSync(path.join(root, '.sql-formatter.json'), JSON.stringify({ namedPrefixes: [':'] }));
+      const fromConfig = run([], root, input);
+      expect(fromConfig.status).toBe(0);
+      expect(fromConfig.stdout).toBe(expected);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('--write without a file fails', () => {
     const result = run(['--write'], dir, INPUT);
     expect(result.status).toBe(2);

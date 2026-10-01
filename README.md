@@ -63,11 +63,12 @@ git diff --name-only --diff-filter=ACM -- '*.sql' | xargs -r sql-template-format
 | `--no-ordinals` | Keep `GROUP BY 1` / `ORDER BY 1` as-is |
 | `--comma-position <p>` | `after` (default) keeps a wrapping comma at the end of the previous line; `before` moves it to the start of the next line |
 | `--keep-functions-inline` | Keep `SUM(...)` / `COUNT(CASE ... END)` on one line instead of breaking their arguments |
+| `--named-prefix <p>` | Named parameter prefix (`:`, `@`, or `$`); repeat for several. Same as the extension's `namedPrefixes` |
 | `--tab-width <n>`, `--tabs` | Indentation (default: 2 spaces) |
-| `-c`, `--config <file>` | Config JSON (default: the nearest `.sql-formatter.json`) |
+| `-c`, `--config <file>` | Config JSON (default: the `.sql-formatter.json` nearest to each file) |
 | `-h`, `--help`, `--version` | |
 
-The nearest ancestor `.sql-formatter.json` is picked up automatically. It accepts the standard `sql-formatter` keys (`language`, `keywordCase`, `tabWidth`, `useTabs`, `paramTypes.custom`) plus `placeholderPatterns`, `replaceOrdinals`, `commaPosition`, and `keepFunctionsInline`:
+Each file is formatted with the `.sql-formatter.json` nearest to it (searching its directory and then each parent, like Prettier); stdin uses the one nearest to the working directory. It accepts the standard `sql-formatter` keys (`language`, `keywordCase`, `tabWidth`, `useTabs`, `paramTypes.custom`, `paramTypes.named`) plus `placeholderPatterns`, `namedPrefixes`, `replaceOrdinals`, `commaPosition`, and `keepFunctionsInline`:
 
 ```json
 {
@@ -80,7 +81,9 @@ The nearest ancestor `.sql-formatter.json` is picked up automatically. It accept
 }
 ```
 
-When neither `placeholderPatterns` nor `paramTypes.custom` is set, the extension's five default patterns apply, so placeholders survive untouched. The CLI does not read VS Code's `settings.json`; its defaults match the extension's defaults (`postgresql` + `upper` + ordinals replaced).
+When neither `placeholderPatterns` nor `paramTypes.custom` is set, the extension's five default patterns apply, so placeholders survive untouched. The CLI does not read VS Code's `settings.json`; its defaults match the extension's defaults (`postgresql` + `upper` + ordinals replaced), and every extension setting has a CLI flag or config key, so equal settings give byte-identical output.
+
+Exit codes: `0` success, `1` `--check` found an unformatted input, `2` an error (bad option or config, unreadable file, unparsable SQL). When both happen, `2` wins.
 
 The file's final newline is **preserved**: a newline-terminated file stays newline-terminated (extra trailing blank lines collapse to one) and a file without one is left alone. `sql-formatter` re-prints the parse tree, so the last newline is restored explicitly — otherwise every run would leave a `\ No newline at end of file` diff behind and `--check` could never pass on a normal file. Line endings are normalized to LF, the same default as Prettier (`endOfLine: "lf"`).
 

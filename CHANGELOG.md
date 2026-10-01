@@ -19,6 +19,17 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 - **The default `%s` placeholder pattern no longer matches the start of a name.** `a%size` was split into `a %s ize`; the pattern is now `%s(?![A-Za-z0-9_])`. If you copied the old defaults into `sqlTemplateFormatter.placeholderPatterns` or `.sql-formatter.json`, update that entry too.
 
+- **CLI errors exit with code 2, never 1.** A missing or unreadable file crashed with a stack trace and exit code 1 — the same code `--check` uses for "not formatted", so CI could not tell them apart — and an earlier error was overwritten by a later unformatted file. Read, parse, and write errors (stdin included) now print one line and exit 2, which outranks 1.
+- **The post-passes run in linear time.** `keepFunctionsInline` re-ran a regex over the whole output at every `(`, adding about 3 s to a 4000-row `INSERT`; the shared lexer now answers that in constant time.
+
+### Added
+
+- **CLI `--named-prefix <p>` (repeatable) and `namedPrefixes` / `paramTypes.named` in `.sql-formatter.json`**, the CLI counterparts of the extension's `sqlTemplateFormatter.namedPrefixes`.
+
+### Changed
+
+- **The CLI picks the `.sql-formatter.json` nearest to each file** instead of the one nearest to the working directory, so `sql-template-formatter --check a/x.sql b/y.sql` honours `a/` and `b/` configs. stdin still uses the working directory.
+
 ## [0.0.16] - 2026-09-25
 
 ### Changed
