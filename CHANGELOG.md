@@ -24,7 +24,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **The post-passes run in linear time.** `keepFunctionsInline` re-ran a regex over the whole output at every `(`, adding about 3 s to a 4000-row `INSERT`; the shared lexer now answers that in constant time.
 
 - **Language-specific and per-folder settings are honoured.** The extension read its settings without a scope, so `"[sql]": { "sqlTemplateFormatter.…": … }` and multi-root folder settings were ignored. Settings are now read for the document being formatted, and every setting is declared `language-overridable`.
-- **The `namedPrefixes` description no longer claims `:` breaks `::` casts** (it does not; the README was right).
+- **The `namedPrefixes` description no longer claims `:` breaks `::` casts** (it does not), nor that `:name` is psycopg2's style — psycopg2 uses `%s` / `%(name)s`, which the default placeholder patterns already cover; `:name` is what SQLAlchemy `text()`, sqlite3, and python-oracledb use.
 
 ### Added
 
