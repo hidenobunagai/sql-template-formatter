@@ -20,6 +20,8 @@ interface SelectColumn {
    * `x::double precision`): replacing its ordinal could change the query.
    */
   readonly uncertain: boolean;
+  /** `*` or `t.*`: expands to an unknown number of columns. */
+  readonly star: boolean;
 }
 
 interface Clause {
@@ -261,7 +263,8 @@ function followsSetOperator(tokens: readonly SqlToken[], index: number): boolean
 /** `FROM` inside `a IS [NOT] DISTINCT FROM b` belongs to the expression, not the clause. */
 function isDistinctFromOperator(tokens: readonly SqlToken[], index: number): boolean {
   const p = previousCode(tokens, index);
-  if (!isKeyword(tokens[p] ?? (tokens[index] as SqlToken), "distinct") || p < 0) return false;
+  const previous = tokens[p];
+  if (previous === undefined || !isKeyword(previous, "distinct")) return false;
   const before = tokens[previousCode(tokens, p)];
   return before !== undefined && isKeyword(before, "is", "not");
 }
@@ -342,21 +345,33 @@ function columnOf(tokens: readonly SqlToken[], start: number, end: number): Sele
   const first = visible[0];
   const last = visible[visible.length - 1];
   if (first === undefined || last === undefined) {
-    return { expressionStart: 0, expressionEnd: 0, alias: undefined, aggregate: false, uncertain: true };
+    return {
+      expressionStart: 0,
+      expressionEnd: 0,
+      alias: undefined,
+      aggregate: false,
+      uncertain: true,
+      star: false,
+    };
   }
   const secondLast = visible[visible.length - 2];
   const aggregate = AGGREGATE_FUNCTIONS.has(first.text.toLowerCase()) || first.text === "*";
+  const star = last.text === "*";
   const column = (alias: string | undefined, expressionEnd: number, uncertain = false): SelectColumn => ({
     expressionStart: first.start,
     expressionEnd,
     alias,
     aggregate,
-    uncertain,
+    uncertain: uncertain || star,
+    star,
   });
 
   if (secondLast === undefined || isSimpleColumn(visible)) return column(undefined, last.end);
-  if (isKeyword(secondLast, "as") && (isNameToken(last) || isQuotedIdentifier(last))) {
-    return column(last.text, secondLast.start);
+  if (isKeyword(secondLast, "as")) {
+    // A string-literal alias (MySQL `AS 'x'`) cannot be written back as a name.
+    return isNameToken(last) || isQuotedIdentifier(last)
+      ? column(last.text, secondLast.start)
+      : column(undefined, secondLast.start, true);
   }
   const lastIsName = isNameToken(last);
   if (!lastIsName && !isQuotedIdentifier(last)) return column(undefined, last.end);
@@ -514,6 +529,10 @@ export function replaceOrdinals(sql: string, kinds: Uint8Array): string {
         const ordinal = Number.parseInt(ordinalToken.text, 10);
         const column = scope.columns[ordinal - 1];
         if (column === undefined) continue;
+        // `*` / `t.*` expands to an unknown number of columns: every ordinal
+        // from that item on points somewhere this scan cannot see.
+        const star = scope.columns.findIndex((c) => c.star);
+        if (star !== -1 && ordinal - 1 >= star) continue;
         const text = resolveOrdinal(scope, column, clause === scope.orderBy ? "order" : "group");
         if (text === undefined || text.length === 0) continue;
         replacements.push({ start: ordinalToken.start, end: ordinalToken.end, text });

@@ -328,6 +328,19 @@ describe('formatSql', () => {
     ).toContain('ORDER BY\n  a ISNULL,\n  n,\n  b,\n  k,\n  one;');
   });
 
+  test('keeps ordinals at or after a * item, whose width is unknown', () => {
+    expect(formatSql('SELECT *, a FROM t ORDER BY 2;', config)).toContain('ORDER BY\n  2;');
+    expect(formatSql('SELECT b, t.*, a FROM t ORDER BY 1, 2, 3;', config)).toContain(
+      'ORDER BY\n  b,\n  2,\n  3;'
+    );
+  });
+
+  test('keeps an ordinal whose alias is a string literal', () => {
+    expect(formatSql("SELECT a AS 'x', b FROM t ORDER BY 1, 2;", { ...config, dialect: 'mysql' })).toContain(
+      'ORDER BY\n  1,\n  b;'
+    );
+  });
+
   test('sees a set operator through comments before the SELECT', () => {
     expect(formatSql('SELECT a FROM t UNION /* note */ SELECT b FROM u ORDER BY 1;', config)).toContain(
       'ORDER BY\n  1;'
