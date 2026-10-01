@@ -17,6 +17,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 - **`keepFunctionsInline` no longer squashes CTEs and subqueries onto one line.** Any `word (` used to count as a function call, so `WITH x AS (SELECT … JOIN … WHERE …)`, `IN (SELECT …)`, `EXISTS (…)`, and `FROM (SELECT …)` collapsed into single lines hundreds of characters long. Only a paren a name touches (`SUM(`) is a call now — sql-formatter prints calls without a space and keyword parens with one.
 
+- **The default `%s` placeholder pattern no longer matches the start of a name.** `a%size` was split into `a %s ize`; the pattern is now `%s(?![A-Za-z0-9_])`. If you copied the old defaults into `sqlTemplateFormatter.placeholderPatterns` or `.sql-formatter.json`, update that entry too.
+
 ## [0.0.16] - 2026-09-25
 
 ### Changed

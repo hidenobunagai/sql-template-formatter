@@ -8,7 +8,7 @@ const config: FormatterConfig = {
     '\\{\\{[\\s\\S]*?\\}\\}',
     '\\{[^{}]*\\}',
     '%\\([^)]*\\)s',
-    '%s',
+    '%s(?![A-Za-z0-9_])',
   ],
   namedPrefixes: [],
   keywordCase: 'upper',
@@ -47,6 +47,12 @@ describe('formatSql', () => {
       formatSql('SELECT * FROM users WHERE id = %s AND status = %s;', config)
     ).toBe(
       'SELECT\n  *\nFROM\n  users\nWHERE\n  id = %s\n  AND status = %s;'
+    );
+  });
+
+  test('does not read %s out of a modulo followed by a name', () => {
+    expect(formatSql('SELECT a%size, b % step, %s AS p FROM t;', config)).toBe(
+      'SELECT\n  a % size,\n  b % step,\n  %s AS p\nFROM\n  t;'
     );
   });
 

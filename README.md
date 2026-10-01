@@ -73,7 +73,7 @@ The nearest ancestor `.sql-formatter.json` is picked up automatically. It accept
 {
   "language": "postgresql",
   "keywordCase": "upper",
-  "placeholderPatterns": ["\\$\\{[^}]+\\}", "\\{\\{[\\s\\S]*?\\}\\}", "\\{[^{}]*\\}", "%\\([^)]*\\)s", "%s"],
+  "placeholderPatterns": ["\\$\\{[^}]+\\}", "\\{\\{[\\s\\S]*?\\}\\}", "\\{[^{}]*\\}", "%\\([^)]*\\)s", "%s(?![A-Za-z0-9_])"],
   "replaceOrdinals": true,
   "commaPosition": "after",
   "keepFunctionsInline": false
@@ -107,7 +107,7 @@ The file's final newline is **preserved**: a newline-terminated file stays newli
     "\\{\\{[\\s\\S]*?\\}\\}",
     "\\{[^{}]*\\}",
     "%\\([^)]*\\)s",
-    "%s",
+    "%s(?![A-Za-z0-9_])",
     "@\\w+"
   ],
   "sqlTemplateFormatter.namedPrefixes": [":"]

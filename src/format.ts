@@ -29,7 +29,7 @@ export const DEFAULT_PLACEHOLDER_PATTERNS = [
   '\\{\\{[\\s\\S]*?\\}\\}',
   '\\{[^{}]*\\}',
   '%\\([^)]*\\)s',
-  '%s',
+  '%s(?![A-Za-z0-9_])',
 ];
 
 export interface EditorOptions {
