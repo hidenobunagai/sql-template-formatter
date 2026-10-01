@@ -146,7 +146,7 @@ describe('formatSql', () => {
 
   test('rejects placeholder patterns that are invalid or can match nothing', () => {
     // An empty match never advances sql-formatter's tokenizer: it would loop forever.
-    for (const pattern of ['x*', '(?=a)', '@\\w*|']) {
+    for (const pattern of ['x*', '(?=a)', '(?=b)', '@\\w*|']) {
       expect(() => formatSql('SELECT a FROM t;', { ...config, placeholderPatterns: [pattern] })).toThrow(
         'can match an empty string'
       );
@@ -156,6 +156,16 @@ describe('formatSql', () => {
     );
     expect(formatSql('SELECT @who FROM t;', { ...config, placeholderPatterns: ['@\\w+'] })).toBe(
       'SELECT\n  @who\nFROM\n  t;'
+    );
+  });
+
+  test('refuses an input on which a placeholder pattern would match empty', () => {
+    // Passes the up-front probes (no single character triggers it), but would
+    // stall sql-formatter's tokenizer between "a" and "b".
+    const cfg = { ...config, placeholderPatterns: ['(?<=a)(?=b)'] };
+    expect(formatSql('SELECT x FROM t;', cfg)).toBe('SELECT\n  x\nFROM\n  t;');
+    expect(() => formatSql('SELECT ab FROM t;', cfg)).toThrow(
+      'it matches an empty string at offset 8 of the input'
     );
   });
 

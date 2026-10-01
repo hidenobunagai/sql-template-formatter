@@ -57,9 +57,38 @@ function expectOneOf(setting: string, value: unknown, allowed: readonly string[]
   }
 }
 
-// Inputs probed for an empty match: '' alone misses lookaround-only patterns
-// such as `(?=a)` that match nothing only next to certain characters.
-const EMPTY_MATCH_PROBES = ['', ' ', '\n', 'a', 'Z', '0', '_', '{', '}', '$', '%', ':', '@', '?', '(', ')', "'", '"', ',', ';', '-', '#', 'select x'];
+// Inputs probed for an empty match when the settings are validated: '' plus
+// every printable ASCII character, so a lookaround-only pattern such as
+// `(?=b)` is reported up front. Probing can never be exhaustive (`(?<=a)(?=b)`
+// only matches empty between two characters), so formatSql() also checks the
+// actual input before handing it to sql-formatter.
+const EMPTY_MATCH_PROBES = [
+  '',
+  '\n',
+  '\t',
+  'select x',
+  ...Array.from({ length: 0x7f - 0x20 }, (_, i) => String.fromCharCode(0x20 + i)),
+];
+
+function compilePlaceholderPattern(pattern: unknown): RegExp {
+  if (typeof pattern !== 'string') {
+    throw new ConfigError(`invalid placeholder pattern ${JSON.stringify(pattern)}: expected a string`);
+  }
+  try {
+    return new RegExp(`(?:${pattern})`, 'uy');
+  } catch (err) {
+    throw new ConfigError(`invalid placeholder pattern ${JSON.stringify(pattern)}: ${(err as Error).message}`);
+  }
+}
+
+/** Offset in `text` where `regex` (sticky) matches the empty string, or -1. */
+function emptyMatchOffset(regex: RegExp, text: string): number {
+  for (let i = 0; i <= text.length; i += 1) {
+    regex.lastIndex = i;
+    if (regex.exec(text)?.[0] === '') return i;
+  }
+  return -1;
+}
 
 /**
  * A placeholder pattern must compile and must never match the empty string:
@@ -67,23 +96,27 @@ const EMPTY_MATCH_PROBES = ['', ' ', '\n', 'a', 'Z', '0', '_', '{', '}', '$', '%
  * forever, which in VS Code freezes the whole extension host.
  */
 function validatePlaceholderPattern(pattern: unknown): void {
-  if (typeof pattern !== 'string') {
-    throw new ConfigError(`invalid placeholder pattern ${JSON.stringify(pattern)}: expected a string`);
+  const regex = compilePlaceholderPattern(pattern);
+  if (EMPTY_MATCH_PROBES.some((probe) => emptyMatchOffset(regex, probe) !== -1)) {
+    throw new ConfigError(
+      `invalid placeholder pattern ${JSON.stringify(pattern)}: it can match an empty string, which would hang the formatter`
+    );
   }
-  let regex: RegExp;
-  try {
-    regex = new RegExp(`(?:${pattern})`, 'uy');
-  } catch (err) {
-    throw new ConfigError(`invalid placeholder pattern ${JSON.stringify(pattern)}: ${(err as Error).message}`);
-  }
-  for (const probe of EMPTY_MATCH_PROBES) {
-    for (let i = 0; i <= probe.length; i += 1) {
-      regex.lastIndex = i;
-      if (regex.exec(probe)?.[0] === '') {
-        throw new ConfigError(
-          `invalid placeholder pattern ${JSON.stringify(pattern)}: it can match an empty string, which would hang the formatter`
-        );
-      }
+}
+
+/**
+ * The guarantee behind {@link validatePlaceholderPattern}: no pattern matches
+ * the empty string at any position of this input. Every position is a
+ * superset of where sql-formatter's tokenizer tries a placeholder, so if this
+ * passes, the tokenizer cannot stall on this input.
+ */
+function assertNoEmptyPlaceholderMatch(sql: string, patterns: readonly string[]): void {
+  for (const pattern of patterns) {
+    const offset = emptyMatchOffset(compilePlaceholderPattern(pattern), sql);
+    if (offset !== -1) {
+      throw new ConfigError(
+        `invalid placeholder pattern ${JSON.stringify(pattern)}: it matches an empty string at offset ${offset} of the input, which would hang the formatter`
+      );
     }
   }
 }
@@ -248,6 +281,7 @@ export function formatSql(
   editorOptions?: EditorOptions
 ): string {
   validateConfig(config, editorOptions);
+  assertNoEmptyPlaceholderMatch(sql, config.placeholderPatterns);
   const paramTypes: ParamTypes = {};
   if (config.placeholderPatterns.length > 0) {
     paramTypes.custom = config.placeholderPatterns.map((regex) => ({ regex }));
