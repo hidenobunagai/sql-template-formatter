@@ -8,7 +8,9 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';
+import { ConfigError as SqlFormatterConfigError } from 'sql-formatter';
 import {
+  ConfigError,
   DEFAULT_PLACEHOLDER_PATTERNS,
   formatSql,
   validateConfig,
@@ -220,13 +222,38 @@ function main(): number {
     return 2;
   }
 
+  // Format every file before acting on any of them. A configuration error
+  // (ours or sql-formatter's) anywhere aborts the whole run untouched, so it
+  // can never leave earlier files rewritten; other errors (unreadable file,
+  // SQL syntax) only skip their own file, like Prettier.
+  type Outcome = { file: string; input: string; output: string } | { file: string; error: Error };
+  const outcomes: Outcome[] = positionals.map((file) => {
+    try {
+      const input = readFileSync(file, 'utf8');
+      return { file, input, output: format(input, path.dirname(file)) };
+    } catch (err) {
+      return { file, error: err as Error };
+    }
+  });
+  const configFailures = outcomes.filter(
+    (o): o is { file: string; error: Error } =>
+      'error' in o && (o.error instanceof ConfigError || o.error instanceof SqlFormatterConfigError)
+  );
+  if (configFailures.length > 0) {
+    for (const { file, error } of configFailures) {
+      console.error(`sql-template-formatter: ${file}: ${error.message}`);
+    }
+    return 2;
+  }
+
   // 2 (an error) outranks 1 (unformatted): a run that could not check every
   // file must not look like it merely found formatting differences.
   let status = 0;
-  for (const file of positionals) {
+  for (const outcome of outcomes) {
+    const { file } = outcome;
     try {
-      const input = readFileSync(file, 'utf8');
-      const output = format(input, path.dirname(file));
+      if ('error' in outcome) throw outcome.error;
+      const { input, output } = outcome;
       if (values.check) {
         if (output !== input) {
           console.error(`sql-template-formatter: ${file} is not formatted`);
