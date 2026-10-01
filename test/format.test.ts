@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { formatSql, type FormatterConfig } from '../src/format';
+import { readFileSync } from 'node:fs';
+import * as path from 'node:path';
+import { supportedDialects } from 'sql-formatter';
+import { DEFAULT_PLACEHOLDER_PATTERNS, formatSql, type FormatterConfig } from '../src/format';
 
 const config: FormatterConfig = {
   dialect: 'postgresql',
@@ -501,5 +504,24 @@ describe('formatSql', () => {
     const cfg = { ...config, keepFunctionsInline: true };
     const once = formatSql('select count(case when a then 1 else 0 end) as n from t;\n', cfg);
     expect(formatSql(once, cfg)).toBe(once);
+  });
+});
+
+describe('package.json settings', () => {
+  const pkg = JSON.parse(readFileSync(path.join(import.meta.dir, '..', 'package.json'), 'utf8'));
+  const props = pkg.contributes.configuration.properties;
+
+  test('offers exactly the dialects sql-formatter supports', () => {
+    expect([...props['sqlTemplateFormatter.dialect'].enum].sort()).toEqual([...supportedDialects].sort());
+  });
+
+  test('ships the same default placeholder patterns as the core', () => {
+    expect(props['sqlTemplateFormatter.placeholderPatterns'].default).toEqual(DEFAULT_PLACEHOLDER_PATTERNS);
+  });
+
+  test('every setting can be overridden per language and per folder', () => {
+    for (const [name, prop] of Object.entries(props)) {
+      expect([name, (prop as { scope?: string }).scope]).toEqual([name, 'language-overridable']);
+    }
   });
 });

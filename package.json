@@ -35,11 +35,36 @@
       "properties": {
         "sqlTemplateFormatter.dialect": {
           "type": "string",
+          "scope": "language-overridable",
           "default": "postgresql",
-          "description": "SQL dialect passed to sql-formatter (e.g. postgresql, bigquery, mysql, sqlite, snowflake)."
+          "description": "SQL dialect passed to sql-formatter. It also decides how strings, quoted identifiers, and comments are read (e.g. whether \\ escapes a quote, whether # starts a comment).",
+          "enum": [
+            "bigquery",
+            "clickhouse",
+            "db2",
+            "db2i",
+            "duckdb",
+            "hive",
+            "mariadb",
+            "mysql",
+            "n1ql",
+            "plsql",
+            "postgresql",
+            "redshift",
+            "singlestoredb",
+            "snowflake",
+            "spark",
+            "sql",
+            "sqlite",
+            "tidb",
+            "transactsql",
+            "trino",
+            "tsql"
+          ]
         },
         "sqlTemplateFormatter.placeholderPatterns": {
           "type": "array",
+          "scope": "language-overridable",
           "items": {
             "type": "string"
           },
@@ -54,14 +79,21 @@
         },
         "sqlTemplateFormatter.namedPrefixes": {
           "type": "array",
+          "scope": "language-overridable",
           "items": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              ":",
+              "@",
+              "$"
+            ]
           },
           "default": [],
-          "description": "Named parameter prefixes (e.g. [\":\"] for psycopg2). Caution: \":\" conflicts with PostgreSQL :: casts. Off by default."
+          "description": "Named parameter prefixes (e.g. [\":\"] for psycopg2's :name). PostgreSQL :: casts keep working. Off by default."
         },
         "sqlTemplateFormatter.keywordCase": {
           "type": "string",
+          "scope": "language-overridable",
           "enum": [
             "preserve",
             "upper",
@@ -72,11 +104,13 @@
         },
         "sqlTemplateFormatter.replaceOrdinals": {
           "type": "boolean",
+          "scope": "language-overridable",
           "default": true,
           "description": "Replace GROUP BY / ORDER BY ordinal numbers (e.g. GROUP BY 1, 2) with the referenced column names."
         },
         "sqlTemplateFormatter.commaPosition": {
           "type": "string",
+          "scope": "language-overridable",
           "enum": [
             "after",
             "before"
@@ -86,6 +120,7 @@
         },
         "sqlTemplateFormatter.keepFunctionsInline": {
           "type": "boolean",
+          "scope": "language-overridable",
           "default": false,
           "description": "Keep function calls (SUM(...), COUNT(CASE ... END), ...) on a single line instead of breaking their arguments across lines."
         }

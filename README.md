@@ -91,11 +91,13 @@ The file's final newline is **preserved**: a newline-terminated file stays newli
 
 ## Settings
 
+Every setting can be set per language (`"[sql]": { … }`) and, in a multi-root workspace, per folder.
+
 | Setting | Default | Description |
 |---|---|---|
-| `sqlTemplateFormatter.dialect` | `postgresql` | Dialect (postgresql, bigquery, mysql, sqlite, snowflake, etc.) |
+| `sqlTemplateFormatter.dialect` | `postgresql` | Dialect (postgresql, bigquery, mysql, sqlite, snowflake, etc. — any dialect sql-formatter supports). It also decides how strings and comments are read: whether `\` escapes a quote, whether `#` starts a comment |
 | `sqlTemplateFormatter.placeholderPatterns` | Regexes for `${...}`, `{{...}}`, `{...}`, `%(name)s`, `%s` (5 entries) | Array of placeholder regex **strings**. **Earlier patterns take priority** |
-| `sqlTemplateFormatter.namedPrefixes` | `[]` | Prefixes for named parameters (e.g. `[":"]`). Compatible with `::` casts |
+| `sqlTemplateFormatter.namedPrefixes` | `[]` | Prefixes for named parameters: `:`, `@`, or `$` (e.g. `[":"]` for psycopg2's `:name`). PostgreSQL `::` casts keep working |
 | `sqlTemplateFormatter.keywordCase` | `upper` | Keyword casing (preserve/upper/lower) |
 | `sqlTemplateFormatter.replaceOrdinals` | `true` | Replace `GROUP BY`/`ORDER BY` ordinals (e.g. `1, 2`) with the referenced columns — only where the meaning provably stays the same. `GROUP BY` gets the column's expression (never its alias), `ORDER BY` a unique alias or the expression. Ordinals are left untouched when the column is `*`, a constant, a placeholder expression, an aggregate in `GROUP BY`, or an expression mentioning an output alias, and in the `ORDER BY` of a `UNION`/`EXCEPT`/`INTERSECT` |
 | `sqlTemplateFormatter.commaPosition` | `after` | `after` keeps a wrapping comma at the end of the previous line; `before` moves it to the start of the next line with a space after it (`id` / `    , name`), keeping a trailing `-- comment` with its own item |

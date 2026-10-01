@@ -22,8 +22,12 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **CLI errors exit with code 2, never 1.** A missing or unreadable file crashed with a stack trace and exit code 1 — the same code `--check` uses for "not formatted", so CI could not tell them apart — and an earlier error was overwritten by a later unformatted file. Read, parse, and write errors (stdin included) now print one line and exit 2, which outranks 1.
 - **The post-passes run in linear time.** `keepFunctionsInline` re-ran a regex over the whole output at every `(`, adding about 3 s to a 4000-row `INSERT`; the shared lexer now answers that in constant time.
 
+- **Language-specific and per-folder settings are honoured.** The extension read its settings without a scope, so `"[sql]": { "sqlTemplateFormatter.…": … }` and multi-root folder settings were ignored. Settings are now read for the document being formatted, and every setting is declared `language-overridable`.
+- **The `namedPrefixes` description no longer claims `:` breaks `::` casts** (it does not; the README was right).
+
 ### Added
 
+- **`sqlTemplateFormatter.dialect` lists the supported dialects**, so VS Code offers completion and flags typos in settings.json.
 - **CLI `--named-prefix <p>` (repeatable) and `namedPrefixes` / `paramTypes.named` in `.sql-formatter.json`**, the CLI counterparts of the extension's `sqlTemplateFormatter.namedPrefixes`.
 
 ### Changed

@@ -1,8 +1,13 @@
 import * as vscode from 'vscode';
 import { formatSql, type FormatterConfig } from './format';
 
-function getConfig(): FormatterConfig {
-  const c = vscode.workspace.getConfiguration('sqlTemplateFormatter');
+/**
+ * Settings for one document: passing it as the scope picks up `[sql]`
+ * language-specific overrides and, in a multi-root workspace, the settings of
+ * the folder the file lives in.
+ */
+function getConfig(document: vscode.TextDocument): FormatterConfig {
+  const c = vscode.workspace.getConfiguration('sqlTemplateFormatter', document);
   return {
     dialect: c.get<string>('dialect', 'postgresql'),
     placeholderPatterns: c.get<string[]>('placeholderPatterns', []),
@@ -35,7 +40,7 @@ export function activate(context: vscode.ExtensionContext): void {
       options: vscode.FormattingOptions
     ): vscode.TextEdit[] {
       const editorOptions = { tabSize: options.tabSize, insertSpaces: options.insertSpaces };
-      const formatted = tryFormat(document.getText(), getConfig(), editorOptions);
+      const formatted = tryFormat(document.getText(), getConfig(document), editorOptions);
       if (formatted === undefined) {
         return [];
       }
@@ -54,7 +59,7 @@ export function activate(context: vscode.ExtensionContext): void {
       options: vscode.FormattingOptions
     ): vscode.TextEdit[] {
       const editorOptions = { tabSize: options.tabSize, insertSpaces: options.insertSpaces };
-      const formatted = tryFormat(document.getText(range), getConfig(), editorOptions);
+      const formatted = tryFormat(document.getText(range), getConfig(document), editorOptions);
       if (formatted === undefined) {
         return [];
       }
