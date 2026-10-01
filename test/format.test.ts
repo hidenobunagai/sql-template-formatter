@@ -118,6 +118,23 @@ describe('formatSql', () => {
     expect(() => formatSql("SELECT * FROM users WHERE name = 'abc;", config)).toThrow();
   });
 
+  test('rejects settings sql-formatter would mishandle', () => {
+    // An unknown keywordCase makes sql-formatter drop every keyword.
+    expect(() => formatSql('SELECT a FROM t;', { ...config, keywordCase: 'shout' })).toThrow(
+      'invalid keywordCase "shout"'
+    );
+    expect(() => formatSql('SELECT a FROM t;', { ...config, commaPosition: 'leading' })).toThrow(
+      'invalid commaPosition'
+    );
+    expect(() => formatSql('SELECT a FROM t;', { ...config, dialect: 'nope' })).toThrow('invalid dialect');
+    expect(() => formatSql('SELECT a FROM t;', { ...config, namedPrefixes: ['#'] })).toThrow(
+      'invalid namedPrefixes entry'
+    );
+    expect(() =>
+      formatSql('SELECT a FROM t;', config, { tabSize: Number.NaN, insertSpaces: true })
+    ).toThrow('invalid tab width');
+  });
+
   test('applies keywordCase lower', () => {
     expect(
       formatSql('SELECT * FROM users;', { ...config, keywordCase: 'lower' })

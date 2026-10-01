@@ -144,7 +144,21 @@ describe('sql-template-formatter CLI', () => {
   test('reports an unknown dialect with exit code 2', () => {
     const result = run(['--dialect', 'nope', 'unformatted.sql'], dir);
     expect(result.status).toBe(2);
-    expect(result.stderr).toContain('sql-template-formatter: unformatted.sql:');
+    expect(result.stderr).toContain('sql-template-formatter: invalid dialect "nope"');
+  });
+
+  test('rejects option values that would corrupt the output', () => {
+    for (const args of [
+      ['-k', 'shout'],
+      ['--comma-position', 'leading'],
+      ['--tab-width', 'abc'],
+      ['--tab-width', '0'],
+    ]) {
+      const result = run([...args, '--write', 'formatted.sql'], dir);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain('sql-template-formatter: invalid');
+      expect(readFileSync(path.join(dir, 'formatted.sql'), 'utf8')).toBe(FORMATTED);
+    }
   });
 
   test('--write without a file fails', () => {

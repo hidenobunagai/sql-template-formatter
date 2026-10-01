@@ -8,7 +8,12 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';
-import { DEFAULT_PLACEHOLDER_PATTERNS, formatSql, type FormatterConfig } from './format';
+import {
+  DEFAULT_PLACEHOLDER_PATTERNS,
+  formatSql,
+  validateConfig,
+  type FormatterConfig,
+} from './format';
 
 const CONFIG_FILENAME = '.sql-formatter.json';
 
@@ -129,6 +134,13 @@ function main(): number {
     tabSize: Number(values['tab-width'] ?? fileConfig.tabWidth ?? 2),
     insertSpaces: !(values.tabs || fileConfig.useTabs === true),
   };
+
+  try {
+    validateConfig(config, editorOptions);
+  } catch (err) {
+    console.error(`sql-template-formatter: ${(err as Error).message}`);
+    return 2;
+  }
 
   const format = (text: string): string => formatSql(text, config, editorOptions);
 

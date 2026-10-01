@@ -11,6 +11,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 - **String literals are never rewritten by the post-passes.** `commaPosition: "before"` and `keepFunctionsInline` used to treat `\` as an escape in every dialect, so a PostgreSQL `'C:\'` flipped string state and the next multi-line literal got a comma moved into it or its newline replaced by a space. All three post-passes (ordinal replacement, function re-joining, comma moving) now share one lexer (`src/scan.ts`) built from sql-formatter's own per-dialect rules — quote types and escapes, `E'…'` / `$tag$…$tag$` strings, quoted identifiers, `#` / `//` line comments only where the dialect has them, nested block comments — and it matches the configured placeholders first, exactly like sql-formatter. As a result a comma inside a multi-line placeholder (`{a,\nb}`) stays put, a PostgreSQL `#>>` operator no longer hides the rest of its line, an ordinal-looking `group by 1` inside a multi-line string literal is left alone, and a moved comma lands on the next item instead of an intervening comment line.
 
+- **Invalid settings are rejected instead of corrupting the output.** An unknown `keywordCase` made sql-formatter drop every keyword (with `--write`, the file lost its `SELECT` / `FROM`), a non-numeric `--tab-width` removed all indentation, and an unknown `commaPosition` silently fell back to `after`. `dialect`, `keywordCase`, `commaPosition`, `namedPrefixes`, and the tab width are now validated; the extension shows the error as a warning and leaves the document unchanged, and the CLI exits with code 2 before touching any file.
+
 ## [0.0.16] - 2026-09-25
 
 ### Changed

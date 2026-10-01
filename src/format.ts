@@ -1,4 +1,4 @@
-import { format, type KeywordCase, type SqlLanguage } from 'sql-formatter';
+import { format, supportedDialects, type KeywordCase, type SqlLanguage } from 'sql-formatter';
 import { replaceOrdinals } from './ordinals';
 import { createLexer, Kind } from './scan';
 
@@ -35,6 +35,44 @@ export const DEFAULT_PLACEHOLDER_PATTERNS = [
 export interface EditorOptions {
   tabSize: number;
   insertSpaces: boolean;
+}
+
+export const KEYWORD_CASES = ['preserve', 'upper', 'lower'] as const;
+export const COMMA_POSITIONS = ['after', 'before'] as const;
+export const NAMED_PREFIXES = [':', '@', '$'] as const;
+
+/** A setting that cannot be formatted with; the message names the setting and the bad value. */
+export class ConfigError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'ConfigError';
+  }
+}
+
+function expectOneOf(setting: string, value: unknown, allowed: readonly string[]): void {
+  if (typeof value !== 'string' || !allowed.includes(value)) {
+    throw new ConfigError(
+      `invalid ${setting} ${JSON.stringify(value)}: expected one of ${allowed.join(', ')}`
+    );
+  }
+}
+
+/**
+ * Reject settings sql-formatter would mishandle instead of failing loudly:
+ * an unknown `keywordCase` makes it drop every keyword from the output, and a
+ * non-numeric tab width silently removes all indentation.
+ */
+export function validateConfig(config: FormatterConfig, editorOptions?: EditorOptions): void {
+  expectOneOf('dialect', config.dialect, supportedDialects);
+  expectOneOf('keywordCase', config.keywordCase, KEYWORD_CASES);
+  expectOneOf('commaPosition', config.commaPosition, COMMA_POSITIONS);
+  for (const prefix of config.namedPrefixes) expectOneOf('namedPrefixes entry', prefix, NAMED_PREFIXES);
+  if (editorOptions !== undefined) {
+    const { tabSize } = editorOptions;
+    if (!Number.isInteger(tabSize) || tabSize < 1) {
+      throw new ConfigError(`invalid tab width ${String(tabSize)}: expected a positive integer`);
+    }
+  }
 }
 
 /**
@@ -177,6 +215,7 @@ export function formatSql(
   config: FormatterConfig,
   editorOptions?: EditorOptions
 ): string {
+  validateConfig(config, editorOptions);
   const paramTypes: ParamTypes = {};
   if (config.placeholderPatterns.length > 0) {
     paramTypes.custom = config.placeholderPatterns.map((regex) => ({ regex }));
