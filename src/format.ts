@@ -1,5 +1,6 @@
 import { format, type KeywordCase, type SqlLanguage } from 'sql-formatter';
 import { replaceOrdinals } from './ordinals';
+import { createLexer, Kind } from './scan';
 
 type ParamTypes = {
   positional?: boolean;
@@ -36,243 +37,139 @@ export interface EditorOptions {
   insertSpaces: boolean;
 }
 
-const DOLLAR_QUOTE = /\$[A-Za-z_][A-Za-z0-9_]*\$|\$\$/y;
-
 /**
- * Move every wrapping separator comma to the front of the next line
+ * Move every wrapping separator comma to the front of the next code line
  * (`commaPosition: 'before'`).
  *
- * The scan walks the whole text carrying string, dollar-quote, and comment
- * state across line breaks, so a comma inside `'…'` (even a multi-line one),
- * `$$…$$`, or a comment is never mistaken for a separator — this formatter
- * has no reformat-until-stable gate, so the scan itself must be exact.
- * ponytail: `#` opens a line comment in every dialect, so a PostgreSQL line
- * holding a `#` operator simply keeps its comma at the end; add dialect-aware
- * comment rules only if that ever matters.
+ * Only a code comma (per the shared lexer, so never one inside a string, a
+ * dollar quote, a comment, or a placeholder) that ends its line — optionally
+ * followed by a line comment — moves. Comment-only lines between it and the
+ * next item are stepped over, so the comma lands on the item, not the comment.
  */
-function moveCommasToLineStarts(text: string): string {
-  const moves: Array<{ line: number; column: number }> = [];
-  let line = 0;
-  let lineStart = 0;
-  let i = 0;
+function moveCommasToLineStarts(text: string, kinds: Uint8Array): string {
+  const lines = text.split('\n');
+  const starts: number[] = [];
+  let offset = 0;
+  for (const line of lines) {
+    starts.push(offset);
+    offset += line.length + 1;
+  }
+  const isBlank = (ch: string | undefined): boolean => ch === ' ' || ch === '\t' || ch === '\r';
+  const isComment = (kind: number | undefined): boolean =>
+    kind === Kind.LineComment || kind === Kind.BlockComment;
 
-  while (i < text.length) {
-    const ch = text[i];
-    if (ch === '\n') {
-      line += 1;
-      lineStart = i + 1;
-      i += 1;
-      continue;
-    }
-    if (ch === "'" || ch === '"' || ch === '`') {
-      const quote = ch;
-      i += 1;
-      while (i < text.length) {
-        if (text[i] === quote) {
-          if (text[i + 1] === quote) {
-            i += 2; // '' / "" / `` doubling stays inside the literal
-            continue;
-          }
-          i += 1;
-          break;
-        }
-        if (text[i] === '\\' && quote !== '`') {
-          if (text[i + 1] === '\n') {
-            line += 1;
-            lineStart = i + 2;
-          }
-          i += 2;
-          continue;
-        }
-        if (text[i] === '\n') {
-          line += 1;
-          lineStart = i + 1;
-        }
-        i += 1;
-      }
-      continue;
-    }
-    if (ch === '$') {
-      DOLLAR_QUOTE.lastIndex = i;
-      const dollar = DOLLAR_QUOTE.exec(text);
-      if (dollar !== null) {
-        const end = text.indexOf(dollar[0], i + dollar[0].length);
-        const limit = end === -1 ? text.length : end;
-        while (i < limit) {
-          if (text[i] === '\n') {
-            line += 1;
-            lineStart = i + 1;
-          }
-          i += 1;
-        }
-        i = end === -1 ? text.length : end + dollar[0].length;
-        continue;
+  /** Column where the line's first item starts, `null` for a blank line, `undefined` for a comment-only line. */
+  const itemColumn = (index: number): number | null | undefined => {
+    const line = lines[index] ?? '';
+    const base = starts[index] ?? 0;
+    let sawComment = false;
+    for (let c = 0; c < line.length; c += 1) {
+      if (isComment(kinds[base + c])) {
+        sawComment = true;
+      } else if (!isBlank(line[c])) {
+        // An item behind a comment on the same line: leave the comma alone.
+        return sawComment ? null : c;
       }
     }
-    if ((ch === '-' && text[i + 1] === '-') || ch === '#') {
-      while (i < text.length && text[i] !== '\n') i += 1;
-      continue;
-    }
-    if (ch === '/' && text[i + 1] === '*') {
-      i += 2;
-      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) {
-        if (text[i] === '\n') {
-          line += 1;
-          lineStart = i + 1;
-        }
-        i += 1;
+    return sawComment ? undefined : null;
+  };
+
+  const removals: Array<{ line: number; column: number }> = [];
+  const inserts = new Map<number, number>();
+  for (let index = 0; index < lines.length - 1; index += 1) {
+    const line = lines[index] ?? '';
+    const base = starts[index] ?? 0;
+    for (let c = line.length - 1; c >= 0; c -= 1) {
+      if (line[c] !== ',' || kinds[base + c] !== Kind.Code) continue;
+      let tail = c + 1;
+      while (tail < line.length && isBlank(line[tail])) tail += 1;
+      if (tail < line.length && kinds[base + tail] !== Kind.LineComment) continue;
+      if (line.slice(0, c).trim() === '') continue; // a lone comma already leads its line
+      let target = index + 1;
+      let column = itemColumn(target);
+      while (column === undefined && target < lines.length - 1) {
+        target += 1;
+        column = itemColumn(target);
       }
-      if (i < text.length) i += 2;
-      continue;
+      if (column === null || column === undefined) continue;
+      removals.push({ line: index, column: c });
+      inserts.set(target, column);
     }
-    if (ch === ',') {
-      const lineEnd = text.indexOf('\n', i);
-      const stop = lineEnd === -1 ? text.length : lineEnd;
-      const tail = text.slice(i + 1, stop);
-      // Only the wrapping comma moves: nothing but whitespace (or a trailing
-      // line comment) may follow it, and a lone comma already leads its line.
-      if (/^[ \t]*(?:$|--|#)/.test(tail) && text.slice(lineStart, i).trim() !== '' && stop < text.length) {
-        const nextStart = stop + 1;
-        const nextEnd = text.indexOf('\n', nextStart);
-        const nextLine = text.slice(nextStart, nextEnd === -1 ? text.length : nextEnd);
-        if (nextLine.trim() !== '') moves.push({ line, column: i - lineStart });
-      }
-    }
-    i += 1;
   }
 
-  const lines = text.split('\n');
-  for (const move of [...moves].reverse()) {
-    const current = lines[move.line];
-    const next = lines[move.line + 1];
-    if (current === undefined || next === undefined) continue;
-    lines[move.line] = `${current.slice(0, move.column)}${current.slice(move.column + 1)}`.trimEnd();
-    const indent = /^[ \t]*/.exec(next)?.[0] ?? '';
-    lines[move.line + 1] = `${indent}, ${next.slice(indent.length)}`;
+  for (const { line, column } of removals) {
+    const current = lines[line] ?? '';
+    lines[line] = `${current.slice(0, column)}${current.slice(column + 1)}`.trimEnd();
+  }
+  for (const [line, column] of inserts) {
+    const current = lines[line] ?? '';
+    lines[line] = `${current.slice(0, column)}, ${current.slice(column)}`;
   }
   return lines.join('\n');
 }
+
+const WORD_CHAR = /[\p{L}\p{N}_$]/u;
 
 /**
  * Re-join the line breaks sql-formatter inserts inside `word(...)` groups so
  * `SUM(...)`, `COUNT(CASE … END)`, and friends stay on one line
  * (`keepFunctionsInline: true`).
  *
- * Only newlines in code state are removed; a newline inside a string, a
- * dollar quote, a block comment, or the line comment it terminates is copied
- * verbatim, so literal content and comment bodies are never rewritten.
+ * Only code newlines are removed; anything the lexer marks as a string, a
+ * dollar quote, a comment, or a placeholder is copied verbatim, and the
+ * newline that ends a line comment stays so no code gets commented out.
  * ponytail: any `word (` opener counts as a function — `IN (…)` groups
  * collapse too, and there is no keyword blacklist.
  */
-function rejoinFunctionCalls(text: string): string {
+function rejoinFunctionCalls(text: string, kinds: Uint8Array): string {
   const stack: boolean[] = []; // per open paren: true when a word(...) call owns it
-  let out = '';
-  let i = 0;
+  let calls = 0;
+  const out: string[] = [];
+  let last = '';
 
-  const isCallOpener = (): boolean => {
-    const match = /[A-Za-z_][A-Za-z0-9_]*\s*$/.exec(out);
-    if (match === null) return false;
-    const before = out.slice(0, match.index);
-    return before === '' || !/[A-Za-z0-9_]$/.test(before);
+  const isCallOpener = (open: number): boolean => {
+    let j = open - 1;
+    while (j >= 0 && kinds[j] === Kind.Code && /\s/.test(text[j] as string)) j -= 1;
+    return j >= 0 && kinds[j] === Kind.Code && WORD_CHAR.test(text[j] as string);
   };
 
+  let i = 0;
   while (i < text.length) {
-    const ch = text[i];
-    if (ch === "'" || ch === '"' || ch === '`') {
-      const quote = ch;
-      out += ch;
-      i += 1;
-      while (i < text.length) {
-        if (text[i] === quote && text[i + 1] === quote) {
-          out += text[i] + text[i + 1];
-          i += 2;
-          continue;
-        }
-        out += text[i];
-        i += 1;
-        if (text[i - 1] === quote) break;
-        if (text[i - 1] === '\\' && quote !== '`' && i < text.length) {
-          out += text[i];
-          i += 1;
-        }
-      }
+    if (kinds[i] !== Kind.Code) {
+      let end = i + 1;
+      while (end < text.length && kinds[end] !== Kind.Code) end += 1;
+      out.push(text.slice(i, end));
+      last = text[end - 1] as string;
+      i = end;
       continue;
     }
-    if (ch === '$') {
-      DOLLAR_QUOTE.lastIndex = i;
-      const dollar = DOLLAR_QUOTE.exec(text);
-      if (dollar !== null) {
-        const end = text.indexOf(dollar[0], i + dollar[0].length);
-        const stop = end === -1 ? text.length : end + dollar[0].length;
-        out += text.slice(i, stop);
-        i = stop;
-        continue;
-      }
-    }
-    if ((ch === '-' && text[i + 1] === '-') || ch === '#') {
-      while (i < text.length && text[i] !== '\n') {
-        out += text[i];
-        i += 1;
-      }
-      if (i < text.length) {
-        out += text[i]; // the newline ending a line comment stays verbatim
-        i += 1;
-      }
-      continue;
-    }
-    if (ch === '/' && text[i + 1] === '*') {
-      out += '/*';
-      i += 2;
-      while (i < text.length && !(text[i] === '*' && text[i + 1] === '/')) {
-        out += text[i];
-        i += 1;
-      }
-      if (i < text.length) {
-        out += '*/';
-        i += 2;
-      }
-      continue;
-    }
-    if (ch === '\n') {
-      if (stack.includes(true)) {
-        let indent = i + 1;
-        while (indent < text.length && (text[indent] === ' ' || text[indent] === '\t')) {
-          indent += 1;
-        }
-        let peek = indent;
-        while (
-          peek < text.length &&
-          (text[peek] === '\n' || text[peek] === ' ' || text[peek] === '\t')
-        ) {
-          peek += 1;
-        }
-        const next = text[peek];
-        const prev = out.slice(-1);
-        i = indent; // swallow this newline and its indent
-        // `(` and `,`/`)` need no separating space; everything else does.
-        if (prev !== '(' && next !== ',' && next !== ')') out += ' ';
-      } else {
-        out += ch;
-        i += 1;
+    const ch = text[i] as string;
+    if (ch === '\n' && calls > 0 && kinds[i - 1] !== Kind.LineComment) {
+      let indent = i + 1;
+      while (indent < text.length && (text[indent] === ' ' || text[indent] === '\t')) indent += 1;
+      let peek = indent;
+      while (peek < text.length && /[\n \t]/.test(text[peek] as string)) peek += 1;
+      const next = text[peek];
+      i = indent; // swallow this newline and its indent
+      // `(` and `,`/`)` need no separating space; everything else does.
+      if (last !== '(' && next !== ',' && next !== ')') {
+        out.push(' ');
+        last = ' ';
       }
       continue;
     }
     if (ch === '(') {
-      stack.push(isCallOpener());
-      out += ch;
-      i += 1;
-      continue;
+      const opener = isCallOpener(i);
+      stack.push(opener);
+      if (opener) calls += 1;
+    } else if (ch === ')') {
+      if (stack.pop() === true) calls -= 1;
     }
-    if (ch === ')') {
-      stack.pop();
-      out += ch;
-      i += 1;
-      continue;
-    }
-    out += ch;
+    out.push(ch);
+    last = ch;
     i += 1;
   }
-  return out;
+  return out.join('');
 }
 
 export function formatSql(
@@ -294,9 +191,15 @@ export function formatSql(
     useTabs: editorOptions ? !editorOptions.insertSpaces : false,
     paramTypes,
   });
-  const result = config.replaceOrdinals ? replaceOrdinals(formatted) : formatted;
-  const joined = config.keepFunctionsInline ? rejoinFunctionCalls(result) : result;
-  const placed = config.commaPosition === 'before' ? moveCommasToLineStarts(joined) : joined;
+  const lexer = createLexer(config.dialect, config.placeholderPatterns);
+  const result = config.replaceOrdinals
+    ? replaceOrdinals(formatted, lexer.scan(formatted))
+    : formatted;
+  const joined = config.keepFunctionsInline
+    ? rejoinFunctionCalls(result, lexer.scan(result))
+    : result;
+  const placed =
+    config.commaPosition === 'before' ? moveCommasToLineStarts(joined, lexer.scan(joined)) : joined;
   // sql-formatter re-prints the parse tree, so the final newline belongs to no
   // statement and gets dropped. Restore it when the input had one: a formatter
   // must not add or remove the file's last byte, or every run leaves a

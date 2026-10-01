@@ -318,6 +318,52 @@ describe('formatSql', () => {
     expect(formatSql(once, cfg)).toBe(once);
   });
 
+  test('reads a PostgreSQL backslash as a literal character, not an escape', () => {
+    const cfg = { ...config, commaPosition: 'before' };
+    expect(formatSql("SELECT 'C:\\' AS p, 'hello,\nworld' AS r, s FROM t;", cfg)).toBe(
+      "SELECT\n  'C:\\' AS p\n  , 'hello,\nworld' AS r\n  , s\nFROM\n  t;"
+    );
+    const inline = { ...config, keepFunctionsInline: true };
+    expect(formatSql("SELECT concat('C:\\', 'b\nc', d) FROM t;", inline)).toBe(
+      "SELECT\n  concat('C:\\', 'b\nc', d)\nFROM\n  t;"
+    );
+  });
+
+  test('honours backslash escapes where the dialect has them', () => {
+    const cfg = { ...config, dialect: 'mysql', commaPosition: 'before' };
+    expect(formatSql("SELECT 'it\\'s', 'a,\nb' AS x, y FROM t;", cfg)).toBe(
+      "SELECT\n  'it\\'s'\n  , 'a,\nb' AS x\n  , y\nFROM\n  t;"
+    );
+  });
+
+  test('treats # as a comment only in dialects that have # comments', () => {
+    const cfg = { ...config, commaPosition: 'before' };
+    expect(formatSql("SELECT data #>> '{a,b}' AS x, y FROM t;", cfg)).toBe(
+      "SELECT\n  data #>> '{a,b}' AS x\n  , y\nFROM\n  t;"
+    );
+    expect(formatSql('SELECT a, # note\n b FROM t;', { ...cfg, dialect: 'mysql' })).toBe(
+      'SELECT\n  a # note\n  , b\nFROM\n  t;'
+    );
+  });
+
+  test('never moves a comma inside a placeholder', () => {
+    const cfg = { ...config, commaPosition: 'before' };
+    expect(formatSql('SELECT {a,\nb}, c FROM t;', cfg)).toBe('SELECT\n  {a,\nb}\n  , c\nFROM\n  t;');
+  });
+
+  test('puts a moved comma on the item, not on a comment line in between', () => {
+    const cfg = { ...config, commaPosition: 'before' };
+    expect(formatSql('SELECT a,\n-- note\nb FROM t;', cfg)).toBe(
+      'SELECT\n  a\n  -- note\n  , b\nFROM\n  t;'
+    );
+  });
+
+  test('never replaces an ordinal inside a multi-line string literal', () => {
+    expect(formatSql("SELECT a FROM t WHERE b = 'x\ngroup by 1';", config)).toBe(
+      "SELECT\n  a\nFROM\n  t\nWHERE\n  b = 'x\ngroup by 1';"
+    );
+  });
+
   test('breaks long function arguments by default', () => {
     expect(
       formatSql(

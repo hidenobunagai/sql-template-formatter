@@ -1,6 +1,8 @@
 /** Replace GROUP BY / ORDER BY ordinal numbers with column names. */
+import { Kind, runs } from "./scan";
 
 interface SqlToken {
+  readonly kind: Kind;
   readonly text: string;
   readonly start: number;
   readonly end: number;
@@ -32,8 +34,9 @@ interface PendingScope {
   itemRanges: [number, number][];
 }
 
-const TOKEN_PATTERN =
-  /--[^\r\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\r\n])*'|"(?:\\.|[^"\\\r\n])*"|`(?:\\.|[^`\\])*`|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[A-Za-z_][A-Za-z0-9_]*|,|;|\(|\)|\.|\[|\]|\{|\}|[<>!=+\-*/%:|&^~]+/g;
+/** Tokens inside a code run; strings, comments, and placeholders come from the lexer. */
+const CODE_TOKEN =
+  /\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[\p{L}_][\p{L}\p{N}_$]*|,|;|\(|\)|\.|\[|\]|\{|\}|[<>!=+\-*/%:|&^~#@?]+/gu;
 
 const AGGREGATE_FUNCTIONS = new Set([
   "any_value",
@@ -144,33 +147,32 @@ const SELECT_MODIFIERS = new Set([
   "straight_join",
 ]);
 
-function tokenize(sql: string): SqlToken[] {
+function tokenize(sql: string, kinds: Uint8Array): SqlToken[] {
   const tokens: SqlToken[] = [];
-  TOKEN_PATTERN.lastIndex = 0;
-  let match: RegExpExecArray | null;
   let depth = 0;
-  while ((match = TOKEN_PATTERN.exec(sql)) !== null) {
-    if (match[0] === "{") {
-      let end = match.index + 1;
-      let braceDepth = 1;
-      while (end < sql.length && braceDepth > 0) {
-        if (sql[end] === "{") {
-          braceDepth += 1;
-        } else if (sql[end] === "}") {
-          braceDepth -= 1;
-        }
-        end += 1;
-      }
-      tokens.push({ text: sql.slice(match.index, end), start: match.index, end, depth });
-      TOKEN_PATTERN.lastIndex = end;
+  for (const run of runs(kinds)) {
+    if (run.kind !== Kind.Code) {
+      tokens.push({
+        kind: run.kind,
+        text: sql.slice(run.start, run.end),
+        start: run.start,
+        end: run.end,
+        depth,
+      });
       continue;
     }
-    const text = match[0];
-    tokens.push({ text, start: match.index, end: match.index + text.length, depth });
-    if (text === "(") {
-      depth += 1;
-    } else if (text === ")") {
-      depth -= 1;
+    const code = sql.slice(run.start, run.end);
+    CODE_TOKEN.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = CODE_TOKEN.exec(code)) !== null) {
+      const text = match[0];
+      const start = run.start + match.index;
+      tokens.push({ kind: Kind.Code, text, start, end: start + text.length, depth });
+      if (text === "(") {
+        depth += 1;
+      } else if (text === ")") {
+        depth -= 1;
+      }
     }
   }
   return tokens;
@@ -185,8 +187,12 @@ function isNumberToken(token: SqlToken): boolean {
   return /^\d/.test(token.text);
 }
 
+function isPlaceholderToken(token: SqlToken): boolean {
+  return token.kind === Kind.Placeholder;
+}
+
 function isNameToken(token: SqlToken): boolean {
-  return /^[A-Za-z_]/.test(token.text) && !/^\d/.test(token.text);
+  return token.kind === Kind.Code && /^[\p{L}_]/u.test(token.text);
 }
 
 function isSelectStart(tokens: readonly SqlToken[], index: number): boolean {
@@ -201,8 +207,9 @@ function isSelectStart(tokens: readonly SqlToken[], index: number): boolean {
     text === ";" ||
     text === ")" ||
     SET_OPERATORS.has(text) ||
-    text.startsWith("--") ||
-    text.startsWith("{")
+    previous?.kind === Kind.LineComment ||
+    previous?.kind === Kind.BlockComment ||
+    (previous !== undefined && isPlaceholderToken(previous))
   );
 }
 
@@ -261,7 +268,7 @@ function isOperator(token: SqlToken | undefined): boolean {
 }
 
 function isCommentToken(token: SqlToken): boolean {
-  return token.text.startsWith("--") || token.text.startsWith("/*");
+  return token.kind === Kind.LineComment || token.kind === Kind.BlockComment;
 }
 
 /** Extract alias and aggregate flag from one select-list item. */
@@ -281,7 +288,7 @@ function columnOf(tokens: readonly SqlToken[], start: number, end: number): Sele
   if (
     secondLast !== undefined &&
     isKeyword(secondLast, "as") &&
-    (isNameToken(last) || /^["`]/.test(last.text))
+    (isNameToken(last) || (last.kind === Kind.Quoted && /^["`[]/.test(last.text)))
   ) {
     alias = last.text;
     expressionEnd = secondLast.start;
@@ -344,8 +351,8 @@ function bareName(text: string): string {
  *   which can only be addressed by the first branch's output names; it keeps
  *   its ordinals.
  */
-export function replaceOrdinals(sql: string): string {
-  const tokens = tokenize(sql);
+export function replaceOrdinals(sql: string, kinds: Uint8Array): string {
+  const tokens = tokenize(sql, kinds);
   const scopes: PendingScope[] = [];
   const replacements: { readonly start: number; readonly end: number; readonly text: string }[] =
     [];
@@ -399,7 +406,7 @@ export function replaceOrdinals(sql: string): string {
     );
     // ponytail: copying an expression that contains an f-string field or
     // a %-placeholder would duplicate it; keep the ordinal.
-    if (inner.some((token) => token.text.startsWith("{") || token.text.startsWith("%"))) {
+    if (inner.some(isPlaceholderToken)) {
       return undefined;
     }
     const names = inner.filter(isNameToken);
@@ -425,7 +432,7 @@ export function replaceOrdinals(sql: string): string {
             .every(
               (token) =>
                 ORDINAL_SUFFIXES.has(token.text.toLowerCase()) ||
-                token.text.startsWith("{") ||
+                isPlaceholderToken(token) ||
                 isCommentToken(token),
             )
         ) {
