@@ -286,6 +286,47 @@ describe('formatSql', () => {
     );
   });
 
+  test('treats only plain integers as ordinals', () => {
+    expect(formatSql('SELECT a, b FROM t ORDER BY 1.5;', config)).toContain('ORDER BY\n  1.5;');
+    expect(formatSql('SELECT a, count(*) FROM t GROUP BY 1e0;', config)).toContain('GROUP BY\n  1e0;');
+  });
+
+  test('keeps operands of IS DISTINCT FROM, AT TIME ZONE, and OVER in the expression', () => {
+    expect(formatSql('SELECT a IS DISTINCT FROM b, c FROM t ORDER BY 1, 2;', config)).toContain(
+      'ORDER BY\n  a IS DISTINCT FROM b,\n  c;'
+    );
+    expect(formatSql('SELECT a IS NOT DISTINCT FROM b AS same, c FROM t ORDER BY 1;', config)).toContain(
+      'ORDER BY\n  same;'
+    );
+    expect(formatSql('SELECT ts AT TIME ZONE zone_name, c FROM t ORDER BY 1;', config)).toContain(
+      'ORDER BY\n  ts AT TIME ZONE zone_name;'
+    );
+    expect(
+      formatSql('SELECT sum(x) OVER w, c FROM t WINDOW w AS (ORDER BY c) ORDER BY 1;', config)
+    ).toMatch(/ORDER BY\n  1;$/);
+  });
+
+  test('keeps an ordinal whose trailing name might be an alias or a keyword', () => {
+    expect(formatSql('SELECT now() - INTERVAL 1 DAY, c FROM t ORDER BY 1;', config)).toContain(
+      'ORDER BY\n  1;'
+    );
+    expect(formatSql('SELECT x::double precision, c FROM t ORDER BY 1;', config)).toContain(
+      'ORDER BY\n  1;'
+    );
+    expect(
+      formatSql('SELECT a ISNULL, f(y) n, t.a b, CASE WHEN a THEN 1 END k, 1 one FROM t ORDER BY 1, 2, 3, 4, 5;', config)
+    ).toContain('ORDER BY\n  a ISNULL,\n  n,\n  b,\n  k,\n  one;');
+  });
+
+  test('sees a set operator through comments before the SELECT', () => {
+    expect(formatSql('SELECT a FROM t UNION /* note */ SELECT b FROM u ORDER BY 1;', config)).toContain(
+      'ORDER BY\n  1;'
+    );
+    expect(
+      formatSql('SELECT a FROM t UNION -- note\nALL /* x */ SELECT b FROM u ORDER BY 1;', config)
+    ).toContain('ORDER BY\n  1;');
+  });
+
   test('keeps an ORDER BY ordinal whose alias is not unique', () => {
     expect(formatSql('SELECT a AS n, b AS n FROM t ORDER BY 1;', config)).toContain('ORDER BY\n  1;');
   });
