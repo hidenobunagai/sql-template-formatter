@@ -13,6 +13,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 - **Invalid settings are rejected instead of corrupting the output.** An unknown `keywordCase` made sql-formatter drop every keyword (with `--write`, the file lost its `SELECT` / `FROM`), a non-numeric `--tab-width` removed all indentation, and an unknown `commaPosition` silently fell back to `after`. `dialect`, `keywordCase`, `commaPosition`, `namedPrefixes`, and the tab width are now validated; the extension shows the error as a warning and leaves the document unchanged, and the CLI exits with code 2 before touching any file.
 
+- **A placeholder pattern that can match an empty string no longer hangs the formatter.** sql-formatter's tokenizer never advances past an empty token, so a pattern such as `x*` looped forever — in VS Code, freezing the whole extension host. Such patterns, and patterns that do not compile, are now rejected with a message naming the pattern.
+
 ## [0.0.16] - 2026-09-25
 
 ### Changed

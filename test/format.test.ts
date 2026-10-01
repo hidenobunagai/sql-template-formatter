@@ -135,6 +135,21 @@ describe('formatSql', () => {
     ).toThrow('invalid tab width');
   });
 
+  test('rejects placeholder patterns that are invalid or can match nothing', () => {
+    // An empty match never advances sql-formatter's tokenizer: it would loop forever.
+    for (const pattern of ['x*', '(?=a)', '@\\w*|']) {
+      expect(() => formatSql('SELECT a FROM t;', { ...config, placeholderPatterns: [pattern] })).toThrow(
+        'can match an empty string'
+      );
+    }
+    expect(() => formatSql('SELECT a FROM t;', { ...config, placeholderPatterns: ['(unclosed'] })).toThrow(
+      'invalid placeholder pattern "(unclosed"'
+    );
+    expect(formatSql('SELECT @who FROM t;', { ...config, placeholderPatterns: ['@\\w+'] })).toBe(
+      'SELECT\n  @who\nFROM\n  t;'
+    );
+  });
+
   test('applies keywordCase lower', () => {
     expect(
       formatSql('SELECT * FROM users;', { ...config, keywordCase: 'lower' })

@@ -57,6 +57,37 @@ function expectOneOf(setting: string, value: unknown, allowed: readonly string[]
   }
 }
 
+// Inputs probed for an empty match: '' alone misses lookaround-only patterns
+// such as `(?=a)` that match nothing only next to certain characters.
+const EMPTY_MATCH_PROBES = ['', ' ', '\n', 'a', 'Z', '0', '_', '{', '}', '$', '%', ':', '@', '?', '(', ')', "'", '"', ',', ';', '-', '#', 'select x'];
+
+/**
+ * A placeholder pattern must compile and must never match the empty string:
+ * sql-formatter's tokenizer does not advance past an empty token and loops
+ * forever, which in VS Code freezes the whole extension host.
+ */
+function validatePlaceholderPattern(pattern: unknown): void {
+  if (typeof pattern !== 'string') {
+    throw new ConfigError(`invalid placeholder pattern ${JSON.stringify(pattern)}: expected a string`);
+  }
+  let regex: RegExp;
+  try {
+    regex = new RegExp(`(?:${pattern})`, 'uy');
+  } catch (err) {
+    throw new ConfigError(`invalid placeholder pattern ${JSON.stringify(pattern)}: ${(err as Error).message}`);
+  }
+  for (const probe of EMPTY_MATCH_PROBES) {
+    for (let i = 0; i <= probe.length; i += 1) {
+      regex.lastIndex = i;
+      if (regex.exec(probe)?.[0] === '') {
+        throw new ConfigError(
+          `invalid placeholder pattern ${JSON.stringify(pattern)}: it can match an empty string, which would hang the formatter`
+        );
+      }
+    }
+  }
+}
+
 /**
  * Reject settings sql-formatter would mishandle instead of failing loudly:
  * an unknown `keywordCase` makes it drop every keyword from the output, and a
@@ -67,6 +98,7 @@ export function validateConfig(config: FormatterConfig, editorOptions?: EditorOp
   expectOneOf('keywordCase', config.keywordCase, KEYWORD_CASES);
   expectOneOf('commaPosition', config.commaPosition, COMMA_POSITIONS);
   for (const prefix of config.namedPrefixes) expectOneOf('namedPrefixes entry', prefix, NAMED_PREFIXES);
+  for (const pattern of config.placeholderPatterns) validatePlaceholderPattern(pattern);
   if (editorOptions !== undefined) {
     const { tabSize } = editorOptions;
     if (!Number.isInteger(tabSize) || tabSize < 1) {
