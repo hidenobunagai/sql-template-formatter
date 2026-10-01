@@ -188,8 +188,11 @@ const WORD_CHAR = /[\p{L}\p{N}_$]/u;
  * Only code newlines are removed; anything the lexer marks as a string, a
  * dollar quote, a comment, or a placeholder is copied verbatim, and the
  * newline that ends a line comment stays so no code gets commented out.
- * ponytail: any `word (` opener counts as a function — `IN (…)` groups
- * collapse too, and there is no keyword blacklist.
+ *
+ * A paren is a call only when a word touches it (`SUM(`): sql-formatter prints
+ * function calls without a space but keyword parens with one (`AS (`,
+ * `IN (`, `EXISTS (`, `OVER (`) and a derived table's `(` on its own line, so
+ * CTE bodies and subqueries keep their layout.
  */
 function rejoinFunctionCalls(text: string, kinds: Uint8Array): string {
   const stack: boolean[] = []; // per open paren: true when a word(...) call owns it
@@ -197,11 +200,8 @@ function rejoinFunctionCalls(text: string, kinds: Uint8Array): string {
   const out: string[] = [];
   let last = '';
 
-  const isCallOpener = (open: number): boolean => {
-    let j = open - 1;
-    while (j >= 0 && kinds[j] === Kind.Code && /\s/.test(text[j] as string)) j -= 1;
-    return j >= 0 && kinds[j] === Kind.Code && WORD_CHAR.test(text[j] as string);
-  };
+  const isCallOpener = (open: number): boolean =>
+    open > 0 && kinds[open - 1] === Kind.Code && WORD_CHAR.test(text[open - 1] as string);
 
   let i = 0;
   while (i < text.length) {

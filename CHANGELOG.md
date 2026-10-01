@@ -15,6 +15,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 - **A placeholder pattern that can match an empty string no longer hangs the formatter.** sql-formatter's tokenizer never advances past an empty token, so a pattern such as `x*` looped forever — in VS Code, freezing the whole extension host. Such patterns, and patterns that do not compile, are now rejected with a message naming the pattern.
 
+- **`keepFunctionsInline` no longer squashes CTEs and subqueries onto one line.** Any `word (` used to count as a function call, so `WITH x AS (SELECT … JOIN … WHERE …)`, `IN (SELECT …)`, `EXISTS (…)`, and `FROM (SELECT …)` collapsed into single lines hundreds of characters long. Only a paren a name touches (`SUM(`) is a call now — sql-formatter prints calls without a space and keyword parens with one.
+
 ## [0.0.16] - 2026-09-25
 
 ### Changed

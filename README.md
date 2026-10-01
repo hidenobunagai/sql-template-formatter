@@ -96,7 +96,7 @@ The file's final newline is **preserved**: a newline-terminated file stays newli
 | `sqlTemplateFormatter.keywordCase` | `upper` | Keyword casing (preserve/upper/lower) |
 | `sqlTemplateFormatter.replaceOrdinals` | `true` | Replace `GROUP BY`/`ORDER BY` ordinals (e.g. `1, 2`) with the referenced columns — only where the meaning provably stays the same. `GROUP BY` gets the column's expression (never its alias), `ORDER BY` a unique alias or the expression. Ordinals are left untouched when the column is `*`, a constant, a placeholder expression, an aggregate in `GROUP BY`, or an expression mentioning an output alias, and in the `ORDER BY` of a `UNION`/`EXCEPT`/`INTERSECT` |
 | `sqlTemplateFormatter.commaPosition` | `after` | `after` keeps a wrapping comma at the end of the previous line; `before` moves it to the start of the next line with a space after it (`id` / `    , name`), keeping a trailing `-- comment` with its own item |
-| `sqlTemplateFormatter.keepFunctionsInline` | `false` | Re-join the formatter's line breaks inside `word(...)` groups so `SUM(...)`, `COUNT(CASE … END)`, and nested calls stay on one line. Newlines inside string literals, `$$…$$` bodies, and comments are never removed |
+| `sqlTemplateFormatter.keepFunctionsInline` | `false` | Re-join the formatter's line breaks inside `word(...)` groups so `SUM(...)`, `COUNT(CASE … END)`, and nested calls stay on one line. Only a paren a name touches (`SUM(`) counts as a call, so CTE bodies (`AS (`), subqueries, `IN (…)`, `EXISTS (…)`, and `OVER (…)` keep their layout. Newlines inside string literals, `$$…$$` bodies, and comments are never removed |
 
 ### Customizing placeholders
 

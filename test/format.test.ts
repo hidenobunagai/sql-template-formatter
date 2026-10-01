@@ -448,6 +448,49 @@ describe('formatSql', () => {
     );
   });
 
+  test('keeps CTE bodies and subqueries multi-line when keepFunctionsInline', () => {
+    const cfg = { ...config, keepFunctionsInline: true };
+    expect(
+      formatSql(
+        'WITH x AS (SELECT a, COALESCE(b, c, d, e, f, g, h) AS v FROM t) SELECT * FROM (SELECT a FROM x) s WHERE EXISTS (SELECT 1 FROM y) AND a IN (SELECT a FROM z);',
+        cfg
+      )
+    ).toBe(
+      [
+        'WITH',
+        '  x AS (',
+        '    SELECT',
+        '      a,',
+        '      COALESCE(b, c, d, e, f, g, h) AS v',
+        '    FROM',
+        '      t',
+        '  )',
+        'SELECT',
+        '  *',
+        'FROM',
+        '  (',
+        '    SELECT',
+        '      a',
+        '    FROM',
+        '      x',
+        '  ) s',
+        'WHERE',
+        '  EXISTS (',
+        '    SELECT',
+        '      1',
+        '    FROM',
+        '      y',
+        '  )',
+        '  AND a IN (',
+        '    SELECT',
+        '      a',
+        '    FROM',
+        '      z',
+        '  );',
+      ].join('\n')
+    );
+  });
+
   test('is idempotent when keepFunctionsInline', () => {
     const cfg = { ...config, keepFunctionsInline: true };
     const once = formatSql('select count(case when a then 1 else 0 end) as n from t;\n', cfg);
