@@ -209,6 +209,23 @@ describe('sql-template-formatter CLI', () => {
     }
   });
 
+  test('checks every file\'s config before rewriting any file', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'sql-template-formatter-preflight-'));
+    try {
+      mkdirSync(path.join(root, 'bad'));
+      writeFileSync(path.join(root, 'bad', '.sql-formatter.json'), JSON.stringify({ keywordCase: 'shout' }));
+      writeFileSync(path.join(root, 'a.sql'), 'select 1;\n');
+      writeFileSync(path.join(root, 'bad', 'b.sql'), 'select 2;\n');
+      const result = run(['--write', 'a.sql', 'bad/b.sql'], root);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain(`${path.join('bad', '.sql-formatter.json')}: invalid keywordCase "shout"`);
+      expect(readFileSync(path.join(root, 'a.sql'), 'utf8')).toBe('select 1;\n');
+      expect(readFileSync(path.join(root, 'bad', 'b.sql'), 'utf8')).toBe('select 2;\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('--write without a file fails', () => {
     const result = run(['--write'], dir, INPUT);
     expect(result.status).toBe(2);
