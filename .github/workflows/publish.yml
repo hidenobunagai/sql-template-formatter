@@ -10,7 +10,30 @@ permissions:
   contents: read
 
 jobs:
+  # Both publishing jobs wait for this one: a tag push must never ship a build
+  # whose tests were not run on that exact commit, nor a version that differs
+  # from the tag (a mistyped tag would otherwise burn a marketplace version).
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
+      - name: Check the tag matches package.json
+        if: github.ref_type == 'tag'
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          if [ "$GITHUB_REF_NAME" != "v$VERSION" ]; then
+            echo "::error::tag $GITHUB_REF_NAME does not match package.json version $VERSION"
+            exit 1
+          fi
+      - run: bun install --frozen-lockfile --ignore-scripts
+      - run: bun run compile
+      - run: bun test
+
   marketplaces:
+    needs: verify
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
@@ -19,7 +42,10 @@ jobs:
           bun-version: 1.3.8
 
       - run: bun install --frozen-lockfile --ignore-scripts
-      - run: bun run compile && npx --yes @vscode/vsce package && python3 scripts/verify_vsix.py
+      # vsce and ovsx run from node_modules, pinned by bun.lock (and held to
+      # bunfig.toml's minimum release age) — never fetched fresh by `npx --yes`
+      # into a job that holds the marketplace tokens.
+      - run: bun run compile && node_modules/.bin/vsce package && python3 scripts/verify_vsix.py
       # --skip-duplicate on both: the two registries fail independently (Open VSX
       # can return 503 while the VS Code Marketplace succeeds), and neither allows
       # republishing a version. Without the flag, re-running this job after such a
@@ -28,7 +54,7 @@ jobs:
       - name: Publish to VS Code Marketplace
         env:
           VSCE_PAT: ${{ secrets.VSCE_PAT }}
-        run: npx --yes @vscode/vsce publish --packagePath *.vsix -p "$VSCE_PAT" --skip-duplicate
+        run: node_modules/.bin/vsce publish --packagePath *.vsix -p "$VSCE_PAT" --skip-duplicate
       - name: Publish to Open VSX
         env:
           OVSX_PAT: ${{ secrets.OVSX_PAT }}
@@ -38,7 +64,7 @@ jobs:
         # already-published version reports success.
         run: |
           for attempt in 1 2 3 4; do
-            if npx --yes ovsx publish *.vsix -p "$OVSX_PAT" --skip-duplicate; then
+            if node_modules/.bin/ovsx publish *.vsix -p "$OVSX_PAT" --skip-duplicate; then
               exit 0
             fi
             echo "::warning::ovsx publish attempt $attempt failed; retrying in 30s"
@@ -51,6 +77,7 @@ jobs:
   # version cannot be republished, while npm can be retried on the next version),
   # so "Re-run failed jobs" must be able to retry one without touching the other.
   npm:
+    needs: verify
     runs-on: ubuntu-latest
     # Trusted publishing (OIDC) replaces the token: no NPM_TOKEN secret, nothing to
     # rotate or expire. Configured at
@@ -72,17 +99,22 @@ jobs:
         with:
           node-version: 22
           registry-url: https://registry.npmjs.org
-      # Trusted publishing needs npm CLI >= 11.5.1; the runner's bundled npm is older.
+      # Trusted publishing needs npm CLI >= 11.5.1; the runner's bundled npm is
+      # older. Pinned (not @latest) so a freshly published npm release never runs
+      # in the publish job before it has aged like every other dependency.
       - name: Upgrade npm for OIDC support
-        run: npm install -g npm@latest
+        run: npm install -g npm@11.20.0
       # Guards the packaging trap: `out/` is gitignored, and `files` in
       # package.json is unusable here (VSCE rejects it next to .vscodeignore),
-      # so the tarball inventory depends on .npmignore alone.
-      - name: Verify the npm tarball ships the CLI
+      # so the tarball inventory depends on .npmignore alone. The CLI is an
+      # esbuild bundle with no runtime dependencies, so it must run straight
+      # out of the unpacked tarball with no node_modules next to it.
+      - name: Verify the npm tarball ships a working CLI
         run: |
-          npm pack --dry-run 2>&1 | tee /tmp/npm-pack.txt
-          grep -q "out/cli.js" /tmp/npm-pack.txt
-          grep -q "out/ordinals.js" /tmp/npm-pack.txt
+          mkdir -p /tmp/npm-pack
+          npm pack --pack-destination /tmp/npm-pack
+          tar -xzf /tmp/npm-pack/*.tgz -C /tmp/npm-pack
+          echo "select a from t;" | node /tmp/npm-pack/package/out/cli.js | grep -q "^SELECT$"
       # Idempotent on purpose: re-running the workflow (for example to retry the
       # marketplaces after an Open VSX 503) must not fail just because npm already
       # has this version.

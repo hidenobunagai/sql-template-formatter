@@ -8,7 +8,13 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';
-import { DEFAULT_PLACEHOLDER_PATTERNS, formatSql, type FormatterConfig } from './format';
+import {
+  DEFAULT_PLACEHOLDER_PATTERNS,
+  formatSql,
+  validateConfig,
+  type EditorOptions,
+  type FormatterConfig,
+} from './format';
 
 const CONFIG_FILENAME = '.sql-formatter.json';
 
@@ -21,7 +27,8 @@ interface FileConfig {
   commaPosition?: string;
   keepFunctionsInline?: boolean;
   placeholderPatterns?: string[];
-  paramTypes?: { custom?: Array<{ regex: string }> };
+  namedPrefixes?: string[];
+  paramTypes?: { custom?: Array<{ regex: string }>; named?: string[] };
 }
 
 const USAGE = `Usage: sql-template-formatter [options] [files...]
@@ -37,24 +44,35 @@ Options:
       --no-ordinals        Keep GROUP BY 1 / ORDER BY 1 ordinals as-is
       --comma-position <p> after | before (default: after)
       --keep-functions-inline  Keep SUM(...) / COUNT(CASE ...) on one line
+      --named-prefix <p>   Named parameter prefix (: | @ | $), repeatable
       --tab-width <n>      Indent width (default: 2)
       --tabs               Indent with tabs
-  -c, --config <file>      Config JSON (default: nearest ${CONFIG_FILENAME})
+  -c, --config <file>      Config JSON (default: the ${CONFIG_FILENAME} nearest to
+                           each file, or to the working directory for stdin)
   -h, --help               Show this help
       --version            Show version`;
 
-function findConfig(startDir: string): FileConfig {
+/** Path of the nearest `.sql-formatter.json` at or above `startDir`, if any. */
+function findConfigPath(startDir: string): string | undefined {
   let dir = path.resolve(startDir);
   for (;;) {
     const candidate = path.join(dir, CONFIG_FILENAME);
     if (existsSync(candidate)) {
-      return JSON.parse(readFileSync(candidate, 'utf8')) as FileConfig;
+      return candidate;
     }
     const parent = path.dirname(dir);
     if (parent === dir) {
-      return {};
+      return undefined;
     }
     dir = parent;
+  }
+}
+
+function readConfig(file: string): FileConfig {
+  try {
+    return JSON.parse(readFileSync(file, 'utf8')) as FileConfig;
+  } catch (err) {
+    throw new Error(`cannot read config ${file}: ${(err as Error).message}`);
   }
 }
 
@@ -67,7 +85,11 @@ function buildConfig(
     dialect: (values.dialect as string) ?? fileConfig.language ?? 'postgresql',
     placeholderPatterns:
       fromFile && fromFile.length > 0 ? fromFile : DEFAULT_PLACEHOLDER_PATTERNS,
-    namedPrefixes: [],
+    namedPrefixes:
+      (values['named-prefix'] as string[] | undefined) ??
+      fileConfig.namedPrefixes ??
+      fileConfig.paramTypes?.named ??
+      [],
     keywordCase: (values['keyword-case'] as string) ?? fileConfig.keywordCase ?? 'upper',
     replaceOrdinals: !values['no-ordinals'] && (fileConfig.replaceOrdinals ?? true),
     commaPosition: (values['comma-position'] as string) ?? fileConfig.commaPosition ?? 'after',
@@ -88,6 +110,7 @@ function main(): number {
         'no-ordinals': { type: 'boolean', default: false },
         'comma-position': { type: 'string' },
         'keep-functions-inline': { type: 'boolean', default: false },
+        'named-prefix': { type: 'string', multiple: true },
         'tab-width': { type: 'string' },
         tabs: { type: 'boolean', default: false },
         config: { type: 'string', short: 'c' },
@@ -114,31 +137,56 @@ function main(): number {
     return 0;
   }
 
-  let fileConfig: FileConfig;
+  type Resolved = { config: FormatterConfig; editorOptions: EditorOptions };
+  const build = (fileConfig: FileConfig): Resolved => ({
+    config: buildConfig(fileConfig, values),
+    editorOptions: {
+      tabSize: Number(values['tab-width'] ?? fileConfig.tabWidth ?? 2),
+      insertSpaces: !(values.tabs || fileConfig.useTabs === true),
+    },
+  });
+
+  // Flag values are wrong for every file: report them once, before any write.
   try {
-    fileConfig = values.config
-      ? (JSON.parse(readFileSync(values.config, 'utf8')) as FileConfig)
-      : findConfig(process.cwd());
+    const flagsOnly = build({});
+    validateConfig(flagsOnly.config, flagsOnly.editorOptions);
   } catch (err) {
-    console.error(`sql-template-formatter: cannot read config: ${(err as Error).message}`);
+    console.error(`sql-template-formatter: ${(err as Error).message}`);
     return 2;
   }
 
-  const config = buildConfig(fileConfig, values);
-  const editorOptions = {
-    tabSize: Number(values['tab-width'] ?? fileConfig.tabWidth ?? 2),
-    insertSpaces: !(values.tabs || fileConfig.useTabs === true),
+  // Each file gets the config nearest to it (like Prettier); stdin gets the
+  // one nearest to the working directory. --config overrides both.
+  const resolved = new Map<string, Resolved>();
+  const resolveFor = (dir: string): Resolved => {
+    const configPath = values.config ?? findConfigPath(dir);
+    const key = configPath ?? '';
+    let entry = resolved.get(key);
+    if (entry === undefined) {
+      entry = build(configPath === undefined ? {} : readConfig(configPath));
+      resolved.set(key, entry);
+    }
+    return entry;
   };
-
-  const format = (text: string): string => formatSql(text, config, editorOptions);
+  const format = (text: string, dir: string): string => {
+    const { config, editorOptions } = resolveFor(dir);
+    return formatSql(text, config, editorOptions);
+  };
 
   if (positionals.length === 0) {
     if (values.write) {
       console.error('sql-template-formatter: --write needs at least one file');
       return 2;
     }
-    const input = readFileSync(0, 'utf8');
-    const output = format(input);
+    let input: string;
+    let output: string;
+    try {
+      input = readFileSync(0, 'utf8');
+      output = format(input, process.cwd());
+    } catch (err) {
+      console.error(`sql-template-formatter: <stdin>: ${(err as Error).message}`);
+      return 2;
+    }
     if (values.check) {
       return output === input ? 0 : 1;
     }
@@ -146,28 +194,28 @@ function main(): number {
     return 0;
   }
 
+  // 2 (an error) outranks 1 (unformatted): a run that could not check every
+  // file must not look like it merely found formatting differences.
   let status = 0;
   for (const file of positionals) {
-    const input = readFileSync(file, 'utf8');
-    let output: string;
     try {
-      output = format(input);
+      const input = readFileSync(file, 'utf8');
+      const output = format(input, path.dirname(file));
+      if (values.check) {
+        if (output !== input) {
+          console.error(`sql-template-formatter: ${file} is not formatted`);
+          status = Math.max(status, 1);
+        }
+      } else if (values.write) {
+        if (output !== input) {
+          writeFileSync(file, output);
+        }
+      } else {
+        process.stdout.write(output);
+      }
     } catch (err) {
       console.error(`sql-template-formatter: ${file}: ${(err as Error).message}`);
       status = 2;
-      continue;
-    }
-    if (values.check) {
-      if (output !== input) {
-        console.error(`sql-template-formatter: ${file} is not formatted`);
-        status = 1;
-      }
-    } else if (values.write) {
-      if (output !== input) {
-        writeFileSync(file, output);
-      }
-    } else {
-      process.stdout.write(output);
     }
   }
   return status;

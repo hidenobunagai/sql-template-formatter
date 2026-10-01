@@ -1,5 +1,8 @@
 import { describe, expect, test } from 'bun:test';
-import { formatSql, type FormatterConfig } from '../src/format';
+import { readFileSync } from 'node:fs';
+import * as path from 'node:path';
+import { supportedDialects } from 'sql-formatter';
+import { DEFAULT_PLACEHOLDER_PATTERNS, formatSql, type FormatterConfig } from '../src/format';
 
 const config: FormatterConfig = {
   dialect: 'postgresql',
@@ -8,7 +11,7 @@ const config: FormatterConfig = {
     '\\{\\{[\\s\\S]*?\\}\\}',
     '\\{[^{}]*\\}',
     '%\\([^)]*\\)s',
-    '%s',
+    '%s(?![A-Za-z0-9_])',
   ],
   namedPrefixes: [],
   keywordCase: 'upper',
@@ -47,6 +50,12 @@ describe('formatSql', () => {
       formatSql('SELECT * FROM users WHERE id = %s AND status = %s;', config)
     ).toBe(
       'SELECT\n  *\nFROM\n  users\nWHERE\n  id = %s\n  AND status = %s;'
+    );
+  });
+
+  test('does not read %s out of a modulo followed by a name', () => {
+    expect(formatSql('SELECT a%size, b % step, %s AS p FROM t;', config)).toBe(
+      'SELECT\n  a % size,\n  b % step,\n  %s AS p\nFROM\n  t;'
     );
   });
 
@@ -116,6 +125,38 @@ describe('formatSql', () => {
 
   test('throws on unclosed string literal', () => {
     expect(() => formatSql("SELECT * FROM users WHERE name = 'abc;", config)).toThrow();
+  });
+
+  test('rejects settings sql-formatter would mishandle', () => {
+    // An unknown keywordCase makes sql-formatter drop every keyword.
+    expect(() => formatSql('SELECT a FROM t;', { ...config, keywordCase: 'shout' })).toThrow(
+      'invalid keywordCase "shout"'
+    );
+    expect(() => formatSql('SELECT a FROM t;', { ...config, commaPosition: 'leading' })).toThrow(
+      'invalid commaPosition'
+    );
+    expect(() => formatSql('SELECT a FROM t;', { ...config, dialect: 'nope' })).toThrow('invalid dialect');
+    expect(() => formatSql('SELECT a FROM t;', { ...config, namedPrefixes: ['#'] })).toThrow(
+      'invalid namedPrefixes entry'
+    );
+    expect(() =>
+      formatSql('SELECT a FROM t;', config, { tabSize: Number.NaN, insertSpaces: true })
+    ).toThrow('invalid tab width');
+  });
+
+  test('rejects placeholder patterns that are invalid or can match nothing', () => {
+    // An empty match never advances sql-formatter's tokenizer: it would loop forever.
+    for (const pattern of ['x*', '(?=a)', '@\\w*|']) {
+      expect(() => formatSql('SELECT a FROM t;', { ...config, placeholderPatterns: [pattern] })).toThrow(
+        'can match an empty string'
+      );
+    }
+    expect(() => formatSql('SELECT a FROM t;', { ...config, placeholderPatterns: ['(unclosed'] })).toThrow(
+      'invalid placeholder pattern "(unclosed"'
+    );
+    expect(formatSql('SELECT @who FROM t;', { ...config, placeholderPatterns: ['@\\w+'] })).toBe(
+      'SELECT\n  @who\nFROM\n  t;'
+    );
   });
 
   test('applies keywordCase lower', () => {
@@ -197,6 +238,58 @@ describe('formatSql', () => {
     );
   });
 
+  test('does not mistake a :: cast for a column alias', () => {
+    expect(formatSql('SELECT created_at::date, count(*) FROM t GROUP BY 1;', config)).toBe(
+      'SELECT\n  created_at::date,\n  count(*)\nFROM\n  t\nGROUP BY\n  created_at::date;'
+    );
+  });
+
+  test('copies the expression, not the alias, into GROUP BY', () => {
+    expect(formatSql('SELECT upper(name) AS n, count(*) FROM t GROUP BY 1;', config)).toBe(
+      'SELECT\n  upper(name) AS n,\n  count(*)\nFROM\n  t\nGROUP BY\n  upper(name);'
+    );
+  });
+
+  test('keeps a GROUP BY ordinal whose expression mentions an output alias', () => {
+    // GROUP BY created_at would group by the raw input column in PostgreSQL.
+    expect(
+      formatSql("SELECT date_trunc('day', created_at) AS created_at, count(*) FROM t GROUP BY 1;", config)
+    ).toBe(
+      "SELECT\n  date_trunc('day', created_at) AS created_at,\n  count(*)\nFROM\n  t\nGROUP BY\n  1;"
+    );
+  });
+
+  test('keeps ORDER BY ordinals of a set operation', () => {
+    expect(formatSql('SELECT a FROM t UNION ALL SELECT b FROM u ORDER BY 1;', config)).toBe(
+      'SELECT\n  a\nFROM\n  t\nUNION ALL\nSELECT\n  b\nFROM\n  u\nORDER BY\n  1;'
+    );
+    expect(formatSql('SELECT a FROM t UNION (SELECT b FROM u) ORDER BY 1;', config)).toContain(
+      'ORDER BY\n  1;'
+    );
+  });
+
+  test('skips DISTINCT when copying the first column', () => {
+    expect(formatSql('SELECT DISTINCT upper(a), b FROM t ORDER BY 1, 2;', config)).toBe(
+      'SELECT DISTINCT\n  upper(a),\n  b\nFROM\n  t\nORDER BY\n  upper(a),\n  b;'
+    );
+  });
+
+  test('never treats an operand keyword as an implicit alias', () => {
+    expect(formatSql('SELECT a IS NULL, b LIKE c FROM t ORDER BY 1, 2;', config)).toBe(
+      'SELECT\n  a IS NULL,\n  b LIKE c\nFROM\n  t\nORDER BY\n  a IS NULL,\n  b LIKE c;'
+    );
+  });
+
+  test('keeps ordinals that point at constants', () => {
+    expect(formatSql("SELECT 'x' AS k, 5, a FROM t GROUP BY 1, 2, 3;", config)).toBe(
+      "SELECT\n  'x' AS k,\n  5,\n  a\nFROM\n  t\nGROUP BY\n  1,\n  2,\n  a;"
+    );
+  });
+
+  test('keeps an ORDER BY ordinal whose alias is not unique', () => {
+    expect(formatSql('SELECT a AS n, b AS n FROM t ORDER BY 1;', config)).toContain('ORDER BY\n  1;');
+  });
+
   test('keeps the trailing newline when the input has one', () => {
     expect(formatSql('select id from users;\n', config)).toBe(
       'SELECT\n  id\nFROM\n  users;\n'
@@ -266,6 +359,52 @@ describe('formatSql', () => {
     expect(formatSql(once, cfg)).toBe(once);
   });
 
+  test('reads a PostgreSQL backslash as a literal character, not an escape', () => {
+    const cfg = { ...config, commaPosition: 'before' };
+    expect(formatSql("SELECT 'C:\\' AS p, 'hello,\nworld' AS r, s FROM t;", cfg)).toBe(
+      "SELECT\n  'C:\\' AS p\n  , 'hello,\nworld' AS r\n  , s\nFROM\n  t;"
+    );
+    const inline = { ...config, keepFunctionsInline: true };
+    expect(formatSql("SELECT concat('C:\\', 'b\nc', d) FROM t;", inline)).toBe(
+      "SELECT\n  concat('C:\\', 'b\nc', d)\nFROM\n  t;"
+    );
+  });
+
+  test('honours backslash escapes where the dialect has them', () => {
+    const cfg = { ...config, dialect: 'mysql', commaPosition: 'before' };
+    expect(formatSql("SELECT 'it\\'s', 'a,\nb' AS x, y FROM t;", cfg)).toBe(
+      "SELECT\n  'it\\'s'\n  , 'a,\nb' AS x\n  , y\nFROM\n  t;"
+    );
+  });
+
+  test('treats # as a comment only in dialects that have # comments', () => {
+    const cfg = { ...config, commaPosition: 'before' };
+    expect(formatSql("SELECT data #>> '{a,b}' AS x, y FROM t;", cfg)).toBe(
+      "SELECT\n  data #>> '{a,b}' AS x\n  , y\nFROM\n  t;"
+    );
+    expect(formatSql('SELECT a, # note\n b FROM t;', { ...cfg, dialect: 'mysql' })).toBe(
+      'SELECT\n  a # note\n  , b\nFROM\n  t;'
+    );
+  });
+
+  test('never moves a comma inside a placeholder', () => {
+    const cfg = { ...config, commaPosition: 'before' };
+    expect(formatSql('SELECT {a,\nb}, c FROM t;', cfg)).toBe('SELECT\n  {a,\nb}\n  , c\nFROM\n  t;');
+  });
+
+  test('puts a moved comma on the item, not on a comment line in between', () => {
+    const cfg = { ...config, commaPosition: 'before' };
+    expect(formatSql('SELECT a,\n-- note\nb FROM t;', cfg)).toBe(
+      'SELECT\n  a\n  -- note\n  , b\nFROM\n  t;'
+    );
+  });
+
+  test('never replaces an ordinal inside a multi-line string literal', () => {
+    expect(formatSql("SELECT a FROM t WHERE b = 'x\ngroup by 1';", config)).toBe(
+      "SELECT\n  a\nFROM\n  t\nWHERE\n  b = 'x\ngroup by 1';"
+    );
+  });
+
   test('breaks long function arguments by default', () => {
     expect(
       formatSql(
@@ -318,9 +457,71 @@ describe('formatSql', () => {
     );
   });
 
+  test('keeps CTE bodies and subqueries multi-line when keepFunctionsInline', () => {
+    const cfg = { ...config, keepFunctionsInline: true };
+    expect(
+      formatSql(
+        'WITH x AS (SELECT a, COALESCE(b, c, d, e, f, g, h) AS v FROM t) SELECT * FROM (SELECT a FROM x) s WHERE EXISTS (SELECT 1 FROM y) AND a IN (SELECT a FROM z);',
+        cfg
+      )
+    ).toBe(
+      [
+        'WITH',
+        '  x AS (',
+        '    SELECT',
+        '      a,',
+        '      COALESCE(b, c, d, e, f, g, h) AS v',
+        '    FROM',
+        '      t',
+        '  )',
+        'SELECT',
+        '  *',
+        'FROM',
+        '  (',
+        '    SELECT',
+        '      a',
+        '    FROM',
+        '      x',
+        '  ) s',
+        'WHERE',
+        '  EXISTS (',
+        '    SELECT',
+        '      1',
+        '    FROM',
+        '      y',
+        '  )',
+        '  AND a IN (',
+        '    SELECT',
+        '      a',
+        '    FROM',
+        '      z',
+        '  );',
+      ].join('\n')
+    );
+  });
+
   test('is idempotent when keepFunctionsInline', () => {
     const cfg = { ...config, keepFunctionsInline: true };
     const once = formatSql('select count(case when a then 1 else 0 end) as n from t;\n', cfg);
     expect(formatSql(once, cfg)).toBe(once);
+  });
+});
+
+describe('package.json settings', () => {
+  const pkg = JSON.parse(readFileSync(path.join(import.meta.dir, '..', 'package.json'), 'utf8'));
+  const props = pkg.contributes.configuration.properties;
+
+  test('offers exactly the dialects sql-formatter supports', () => {
+    expect([...props['sqlTemplateFormatter.dialect'].enum].sort()).toEqual([...supportedDialects].sort());
+  });
+
+  test('ships the same default placeholder patterns as the core', () => {
+    expect(props['sqlTemplateFormatter.placeholderPatterns'].default).toEqual(DEFAULT_PLACEHOLDER_PATTERNS);
+  });
+
+  test('every setting can be overridden per language and per folder', () => {
+    for (const [name, prop] of Object.entries(props)) {
+      expect([name, (prop as { scope?: string }).scope]).toEqual([name, 'language-overridable']);
+    }
   });
 });

@@ -1,6 +1,8 @@
 /** Replace GROUP BY / ORDER BY ordinal numbers with column names. */
+import { Kind, runs } from "./scan";
 
 interface SqlToken {
+  readonly kind: Kind;
   readonly text: string;
   readonly start: number;
   readonly end: number;
@@ -22,6 +24,8 @@ interface PendingScope {
   readonly depth: number;
   readonly columns: SelectColumn[];
   phase: "select" | "from";
+  /** Part of a UNION / EXCEPT / INTERSECT: its ORDER BY sorts the combined result. */
+  setOperation: boolean;
   columnStart: number;
   activeClause: "group" | "order" | undefined;
   groupBy: Clause | undefined;
@@ -30,8 +34,9 @@ interface PendingScope {
   itemRanges: [number, number][];
 }
 
-const TOKEN_PATTERN =
-  /--[^\r\n]*|\/\*[\s\S]*?\*\/|'(?:\\.|[^'\\\r\n])*'|"(?:\\.|[^"\\\r\n])*"|`(?:\\.|[^`\\])*`|\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[A-Za-z_][A-Za-z0-9_]*|,|;|\(|\)|\.|\[|\]|\{|\}|[<>!=+\-*/%:|&^~]+/g;
+/** Tokens inside a code run; strings, comments, and placeholders come from the lexer. */
+const CODE_TOKEN =
+  /\d+(?:\.\d+)?(?:[eE][+-]?\d+)?|[\p{L}_][\p{L}\p{N}_$]*|,|;|\(|\)|\.|\[|\]|\{|\}|[<>!=+\-*/%:|&^~#@?]+/gu;
 
 const AGGREGATE_FUNCTIONS = new Set([
   "any_value",
@@ -57,54 +62,117 @@ const ORDINAL_SUFFIXES = new Set(["asc", "desc", "nulls", "first", "last"]);
 
 /** Keywords that can never be a column alias inside a select list. */
 const RESERVED = new Set([
+  "all",
+  "and",
   "as",
+  "asc",
+  "between",
   "case",
+  "desc",
+  "distinct",
   "else",
   "end",
+  "false",
   "from",
   "group",
   "having",
+  "ilike",
+  "in",
   "into",
+  "is",
   "join",
   "left",
+  "like",
   "limit",
+  "not",
+  "null",
   "offset",
   "on",
+  "or",
   "order",
   "right",
   "then",
+  "true",
   "union",
+  "unknown",
   "when",
   "where",
+  "zone",
 ]);
 
-function tokenize(sql: string): SqlToken[] {
+/**
+ * Keywords that take an operand after them: a name following one of these is
+ * that operand (`a IS NOT b`, `x LIKE y`), never an implicit alias.
+ */
+const OPERAND_KEYWORDS = new Set([
+  "and",
+  "as",
+  "at",
+  "between",
+  "case",
+  "collate",
+  "distinct",
+  "else",
+  "escape",
+  "ilike",
+  "in",
+  "interval",
+  "is",
+  "like",
+  "not",
+  "or",
+  "regexp",
+  "rlike",
+  "similar",
+  "then",
+  "time",
+  "to",
+  "when",
+]);
+
+const SET_OPERATORS = new Set(["union", "except", "intersect", "minus"]);
+
+/** Select-list modifiers that precede the first column (`SELECT DISTINCT a`). */
+const SELECT_MODIFIERS = new Set([
+  "all",
+  "distinct",
+  "distinctrow",
+  "high_priority",
+  "sql_big_result",
+  "sql_buffer_result",
+  "sql_cache",
+  "sql_calc_found_rows",
+  "sql_no_cache",
+  "sql_small_result",
+  "straight_join",
+]);
+
+function tokenize(sql: string, kinds: Uint8Array): SqlToken[] {
   const tokens: SqlToken[] = [];
-  TOKEN_PATTERN.lastIndex = 0;
-  let match: RegExpExecArray | null;
   let depth = 0;
-  while ((match = TOKEN_PATTERN.exec(sql)) !== null) {
-    if (match[0] === "{") {
-      let end = match.index + 1;
-      let braceDepth = 1;
-      while (end < sql.length && braceDepth > 0) {
-        if (sql[end] === "{") {
-          braceDepth += 1;
-        } else if (sql[end] === "}") {
-          braceDepth -= 1;
-        }
-        end += 1;
-      }
-      tokens.push({ text: sql.slice(match.index, end), start: match.index, end, depth });
-      TOKEN_PATTERN.lastIndex = end;
+  for (const run of runs(kinds)) {
+    if (run.kind !== Kind.Code) {
+      tokens.push({
+        kind: run.kind,
+        text: sql.slice(run.start, run.end),
+        start: run.start,
+        end: run.end,
+        depth,
+      });
       continue;
     }
-    const text = match[0];
-    tokens.push({ text, start: match.index, end: match.index + text.length, depth });
-    if (text === "(") {
-      depth += 1;
-    } else if (text === ")") {
-      depth -= 1;
+    const code = sql.slice(run.start, run.end);
+    CODE_TOKEN.lastIndex = 0;
+    let match: RegExpExecArray | null;
+    while ((match = CODE_TOKEN.exec(code)) !== null) {
+      const text = match[0];
+      const start = run.start + match.index;
+      tokens.push({ kind: Kind.Code, text, start, end: start + text.length, depth });
+      if (text === "(") {
+        depth += 1;
+      } else if (text === ")") {
+        depth -= 1;
+      }
     }
   }
   return tokens;
@@ -119,36 +187,88 @@ function isNumberToken(token: SqlToken): boolean {
   return /^\d/.test(token.text);
 }
 
+function isPlaceholderToken(token: SqlToken): boolean {
+  return token.kind === Kind.Placeholder;
+}
+
 function isNameToken(token: SqlToken): boolean {
-  return /^[A-Za-z_]/.test(token.text) && !/^\d/.test(token.text);
+  return token.kind === Kind.Code && /^[\p{L}_]/u.test(token.text);
 }
 
 function isSelectStart(tokens: readonly SqlToken[], index: number): boolean {
   if (index === 0) return true;
   const previous = tokens[index - 1];
   const text = previous?.text.toLowerCase() ?? "";
-  if (text === "all") {
-    const before = tokens[index - 2]?.text.toLowerCase() ?? "";
-    return before === "union" || before === "except";
+  if (text === "all" || text === "distinct") {
+    return SET_OPERATORS.has(tokens[index - 2]?.text.toLowerCase() ?? "");
   }
   return (
     text === "(" ||
     text === ";" ||
     text === ")" ||
-    text === "union" ||
-    text === "except" ||
-    text === "intersect" ||
-    text.startsWith("--") ||
-    text.startsWith("{")
+    SET_OPERATORS.has(text) ||
+    previous?.kind === Kind.LineComment ||
+    previous?.kind === Kind.BlockComment ||
+    (previous !== undefined && isPlaceholderToken(previous))
   );
 }
 
+/** True when the SELECT at `index` is a later operand of UNION / EXCEPT / INTERSECT. */
+function followsSetOperator(tokens: readonly SqlToken[], index: number): boolean {
+  let previous = tokens[index - 1]?.text.toLowerCase() ?? "";
+  if (previous === "all" || previous === "distinct") {
+    previous = tokens[index - 2]?.text.toLowerCase() ?? "";
+  }
+  return SET_OPERATORS.has(previous);
+}
+
+/** Index of the first select-list token, past DISTINCT / ALL / DISTINCT ON (...) / TOP n. */
+function skipSelectModifiers(tokens: readonly SqlToken[], index: number): number {
+  const depth = tokens[index - 1]?.depth ?? 0;
+  const skipGroup = (open: number): number => {
+    for (let k = open + 1; k < tokens.length; k += 1) {
+      const token = tokens[k];
+      if (token !== undefined && token.text === ")" && token.depth === depth + 1) return k + 1;
+    }
+    return tokens.length;
+  };
+  let j = index;
+  for (;;) {
+    const token = tokens[j];
+    if (token === undefined || token.depth !== depth) return j;
+    const lower = token.text.toLowerCase();
+    if (lower === "distinct" && isKeyword(tokens[j + 1] ?? token, "on") && tokens[j + 2]?.text === "(") {
+      j = skipGroup(j + 2);
+    } else if (lower === "top") {
+      const amount = tokens[j + 1];
+      if (amount?.text === "(") {
+        j = skipGroup(j + 1);
+      } else if (amount !== undefined && isNumberToken(amount)) {
+        j += 2;
+      } else {
+        return j;
+      }
+      if (isKeyword(tokens[j] ?? token, "percent")) j += 1;
+      if (isKeyword(tokens[j] ?? token, "with") && isKeyword(tokens[j + 1] ?? token, "ties")) j += 2;
+    } else if (
+      lower === "as" &&
+      (isKeyword(tokens[j + 1] ?? token, "struct") || isKeyword(tokens[j + 1] ?? token, "value"))
+    ) {
+      j += 2;
+    } else if (SELECT_MODIFIERS.has(lower)) {
+      j += 1;
+    } else {
+      return j;
+    }
+  }
+}
+
 function isOperator(token: SqlToken | undefined): boolean {
-  return token !== undefined && /^[+\-*/%<>=!~|&^]+$/.test(token.text);
+  return token !== undefined && /^[+\-*/%<>=!~|&^:#@]+$/.test(token.text);
 }
 
 function isCommentToken(token: SqlToken): boolean {
-  return token.text.startsWith("--") || token.text.startsWith("/*");
+  return token.kind === Kind.LineComment || token.kind === Kind.BlockComment;
 }
 
 /** Extract alias and aggregate flag from one select-list item. */
@@ -168,7 +288,7 @@ function columnOf(tokens: readonly SqlToken[], start: number, end: number): Sele
   if (
     secondLast !== undefined &&
     isKeyword(secondLast, "as") &&
-    (isNameToken(last) || /^["`]/.test(last.text))
+    (isNameToken(last) || (last.kind === Kind.Quoted && /^["`[]/.test(last.text)))
   ) {
     alias = last.text;
     expressionEnd = secondLast.start;
@@ -177,7 +297,9 @@ function columnOf(tokens: readonly SqlToken[], start: number, end: number): Sele
     isNameToken(last) &&
     !RESERVED.has(last.text.toLowerCase()) &&
     !simpleColumn &&
-    !isOperator(secondLast)
+    !isOperator(secondLast) &&
+    secondLast.text !== "." &&
+    !OPERAND_KEYWORDS.has(secondLast.text.toLowerCase())
   ) {
     alias = last.text;
     expressionEnd = last.start;
@@ -209,22 +331,37 @@ function expressionText(sql: string, tokens: readonly SqlToken[], column: Select
   return flatten(result);
 }
 
+/** Lower-cased name with identifier quotes removed, for alias comparisons. */
+function bareName(text: string): string {
+  return text.replace(/^["`[]|["`\]]$/g, "").toLowerCase();
+}
+
 /**
  * Replace `GROUP BY 1, 2` and `ORDER BY 1` ordinals with the corresponding
- * select-list column (its alias when present, otherwise its expression).
- * Unresolvable ordinals and aggregate expressions without an alias are left
- * untouched.
+ * select-list column, but only where the result provably means the same:
+ *
+ * - GROUP BY copies the column's expression, never its alias: PostgreSQL
+ *   resolves a GROUP BY name to an input column first, so
+ *   `date_trunc('day', created_at) AS created_at … GROUP BY created_at` would
+ *   silently group by the raw column.
+ * - ORDER BY uses a unique alias (output names win there) or the expression.
+ * - An expression that mentions any output alias, holds a placeholder, is a
+ *   bare constant, or (for GROUP BY) is an aggregate keeps its ordinal.
+ * - The ORDER BY of a UNION / EXCEPT / INTERSECT sorts the combined result,
+ *   which can only be addressed by the first branch's output names; it keeps
+ *   its ordinals.
  */
-export function replaceOrdinals(sql: string): string {
-  const tokens = tokenize(sql);
+export function replaceOrdinals(sql: string, kinds: Uint8Array): string {
+  const tokens = tokenize(sql, kinds);
   const scopes: PendingScope[] = [];
   const replacements: { readonly start: number; readonly end: number; readonly text: string }[] =
     [];
 
-  const newScope = (depth: number, columnStart: number): PendingScope => ({
+  const newScope = (depth: number, columnStart: number, setOperation: boolean): PendingScope => ({
     depth,
     columns: [],
     phase: "select",
+    setOperation,
     columnStart,
     activeClause: undefined,
     groupBy: undefined,
@@ -245,6 +382,40 @@ export function replaceOrdinals(sql: string): string {
     scope.activeClause = undefined;
   };
 
+  const resolveOrdinal = (
+    scope: PendingScope,
+    column: SelectColumn,
+    kind: "group" | "order",
+  ): string | undefined => {
+    if (kind === "order" && scope.setOperation) return undefined;
+    const aliases = scope.columns
+      .map((c) => c.alias)
+      .filter((alias): alias is string => alias !== undefined)
+      .map(bareName);
+    if (kind === "order" && column.alias !== undefined) {
+      const name = bareName(column.alias);
+      return aliases.filter((alias) => alias === name).length === 1 ? column.alias : undefined;
+    }
+    if (kind === "group" && column.aggregate) return undefined;
+    if (kind === "order" && column.aggregate && column.alias === undefined) return undefined;
+    const inner = tokens.filter(
+      (token) =>
+        token.start >= column.expressionStart &&
+        token.end <= column.expressionEnd &&
+        !isCommentToken(token),
+    );
+    // ponytail: copying an expression that contains an f-string field or
+    // a %-placeholder would duplicate it; keep the ordinal.
+    if (inner.some(isPlaceholderToken)) {
+      return undefined;
+    }
+    const names = inner.filter(isNameToken);
+    // A bare constant would turn into a literal (`GROUP BY 'x'`) or a different ordinal.
+    if (names.length === 0) return undefined;
+    if (names.some((token) => aliases.includes(bareName(token.text)))) return undefined;
+    return expressionText(sql, tokens, column);
+  };
+
   const finishScope = (scope: PendingScope, endIndex: number): void => {
     closeClause(scope, endIndex);
     for (const clause of [scope.groupBy, scope.orderBy]) {
@@ -261,7 +432,7 @@ export function replaceOrdinals(sql: string): string {
             .every(
               (token) =>
                 ORDINAL_SUFFIXES.has(token.text.toLowerCase()) ||
-                token.text.startsWith("{") ||
+                isPlaceholderToken(token) ||
                 isCommentToken(token),
             )
         ) {
@@ -271,15 +442,7 @@ export function replaceOrdinals(sql: string): string {
         const ordinal = Number.parseInt(ordinalToken.text, 10);
         const column = scope.columns[ordinal - 1];
         if (column === undefined) continue;
-        let text: string | undefined;
-        if (column.alias !== undefined) {
-          text = column.alias;
-        } else if (!column.aggregate) {
-          const expression = expressionText(sql, tokens, column);
-          // ponytail: copying an expression that contains an f-string field or
-          // a %-placeholder would duplicate it; keep the ordinal.
-          if (!expression.includes("{") && !expression.includes("%")) text = expression;
-        }
+        const text = resolveOrdinal(scope, column, clause === scope.orderBy ? "order" : "group");
         if (text === undefined || text.length === 0) continue;
         replacements.push({ start: ordinalToken.start, end: ordinalToken.end, text });
       }
@@ -301,7 +464,9 @@ export function replaceOrdinals(sql: string): string {
         finishScope(top, index);
         scopes.pop();
       }
-      scopes.push(newScope(token.depth, index + 1));
+      scopes.push(
+        newScope(token.depth, skipSelectModifiers(tokens, index + 1), followsSetOperator(tokens, index)),
+      );
       continue;
     }
     const scope = scopes[scopes.length - 1];
@@ -325,6 +490,7 @@ export function replaceOrdinals(sql: string): string {
       scopes.pop();
       continue;
     }
+    if (SET_OPERATORS.has(token.text.toLowerCase())) scope.setOperation = true;
     if (scope.activeClause !== undefined) {
       if (token.text === ",") {
         scope.itemRanges.push([scope.itemStart, index]);
@@ -340,9 +506,13 @@ export function replaceOrdinals(sql: string): string {
           "limit",
           "offset",
           "qualify",
+          "window",
+          "fetch",
+          "for",
           "union",
           "except",
           "intersect",
+          "minus",
           "distribute",
           "with",
         )

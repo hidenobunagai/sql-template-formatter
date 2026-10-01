@@ -3,6 +3,44 @@
 Notable changes to the **SQL Template Formatter** VS Code extension.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`replaceOrdinals` no longer changes what a query means.** GROUP BY now copies the column's expression instead of its alias (PostgreSQL resolves a GROUP BY name to an input column first, so `date_trunc('day', created_at) AS created_at … GROUP BY 1` used to become a grouping by the raw column). An ordinal is kept when its expression mentions any output alias, is a bare constant, holds a placeholder, or is an aggregate (GROUP BY); the ORDER BY of a `UNION` / `EXCEPT` / `INTERSECT` keeps its ordinals; an ORDER BY alias is only used when it is unique. A `::` cast is no longer read as an alias (`created_at::date` → `GROUP BY date`), operand keywords (`a IS NULL`, `b LIKE c`) are never taken for implicit aliases, and `DISTINCT` / `DISTINCT ON (…)` / `TOP n` are skipped when reading the first column (`ORDER BY DISTINCT upper(a)`).
+
+- **String literals are never rewritten by the post-passes.** `commaPosition: "before"` and `keepFunctionsInline` used to treat `\` as an escape in every dialect, so a PostgreSQL `'C:\'` flipped string state and the next multi-line literal got a comma moved into it or its newline replaced by a space. All three post-passes (ordinal replacement, function re-joining, comma moving) now share one lexer (`src/scan.ts`) built from sql-formatter's own per-dialect rules — quote types and escapes, `E'…'` / `$tag$…$tag$` strings, quoted identifiers, `#` / `//` line comments only where the dialect has them, nested block comments — and it matches the configured placeholders first, exactly like sql-formatter. As a result a comma inside a multi-line placeholder (`{a,\nb}`) stays put, a PostgreSQL `#>>` operator no longer hides the rest of its line, an ordinal-looking `group by 1` inside a multi-line string literal is left alone, and a moved comma lands on the next item instead of an intervening comment line.
+
+- **Invalid settings are rejected instead of corrupting the output.** An unknown `keywordCase` made sql-formatter drop every keyword (with `--write`, the file lost its `SELECT` / `FROM`), a non-numeric `--tab-width` removed all indentation, and an unknown `commaPosition` silently fell back to `after`. `dialect`, `keywordCase`, `commaPosition`, `namedPrefixes`, and the tab width are now validated; the extension shows the error as a warning and leaves the document unchanged, and the CLI exits with code 2 before touching any file.
+
+- **A placeholder pattern that can match an empty string no longer hangs the formatter.** sql-formatter's tokenizer never advances past an empty token, so a pattern such as `x*` looped forever — in VS Code, freezing the whole extension host. Such patterns, and patterns that do not compile, are now rejected with a message naming the pattern.
+
+- **`keepFunctionsInline` no longer squashes CTEs and subqueries onto one line.** Any `word (` used to count as a function call, so `WITH x AS (SELECT … JOIN … WHERE …)`, `IN (SELECT …)`, `EXISTS (…)`, and `FROM (SELECT …)` collapsed into single lines hundreds of characters long. Only a paren a name touches (`SUM(`) is a call now — sql-formatter prints calls without a space and keyword parens with one.
+
+- **The default `%s` placeholder pattern no longer matches the start of a name.** `a%size` was split into `a %s ize`; the pattern is now `%s(?![A-Za-z0-9_])`. If you copied the old defaults into `sqlTemplateFormatter.placeholderPatterns` or `.sql-formatter.json`, update that entry too.
+
+- **CLI errors exit with code 2, never 1.** A missing or unreadable file crashed with a stack trace and exit code 1 — the same code `--check` uses for "not formatted", so CI could not tell them apart — and an earlier error was overwritten by a later unformatted file. Read, parse, and write errors (stdin included) now print one line and exit 2, which outranks 1.
+- **The post-passes run in linear time.** `keepFunctionsInline` re-ran a regex over the whole output at every `(`, adding about 3 s to a 4000-row `INSERT`; the shared lexer now answers that in constant time.
+
+- **Language-specific and per-folder settings are honoured.** The extension read its settings without a scope, so `"[sql]": { "sqlTemplateFormatter.…": … }` and multi-root folder settings were ignored. Settings are now read for the document being formatted, and every setting is declared `language-overridable`.
+- **The `namedPrefixes` description no longer claims `:` breaks `::` casts** (it does not; the README was right).
+
+### Added
+
+- **`sqlTemplateFormatter.dialect` lists the supported dialects**, so VS Code offers completion and flags typos in settings.json.
+- **CLI `--named-prefix <p>` (repeatable) and `namedPrefixes` / `paramTypes.named` in `.sql-formatter.json`**, the CLI counterparts of the extension's `sqlTemplateFormatter.namedPrefixes`.
+
+### Changed
+
+- **The extension and the CLI are esbuild bundles.** `out/extension.js` and `out/cli.js` now inline sql-formatter, so the VSIX shrinks from 445 files / 950 KB to 9 files / 450 KB with no `node_modules`, and the npm package has no runtime dependencies. `scripts/verify_vsix.py` now requires exactly the two bundles, and the publish workflow runs the CLI from the unpacked npm tarball.
+- **Publishing is gated on tests and a matching tag.** A new `verify` job in `publish.yml` checks that the pushed tag equals `v` + the `package.json` version, builds, and runs the tests; both publishing jobs wait for it. `vsce` and `ovsx` now run from `node_modules` (pinned by `bun.lock`, `ovsx` added as a dev dependency) instead of `npx --yes` fetching the latest release into a job holding the marketplace tokens, and the npm upgrade is pinned to `11.20.0` instead of `@latest`.
+- **CI runs on pushes to `main` and on pull requests** (plus manual runs) instead of twice for every PR branch push, with Bun pinned like the publish workflow. `bun run test` compiles first (`pretest`), since the CLI tests run the built `out/cli.js`.
+- **The CLI picks the `.sql-formatter.json` nearest to each file** instead of the one nearest to the working directory, so `sql-template-formatter --check a/x.sql b/y.sql` honours `a/` and `b/` configs. stdin still uses the working directory.
+
+### Removed
+
+- **Repository clutter**: the `poc/` experiments, the one-off icon scripts in `scratch/`, the `.superpowers/` progress ledger, the empty `.mcp.json` / `opencode.jsonc`, and `package-lock.json`. `bun.lock` is the only lockfile — CI and both publish jobs install with `bun --frozen-lockfile`, and the npm lockfile had already drifted from it (it still listed `sql-formatter` as a runtime dependency). None of these were ever packaged.
+
 ## [0.0.16] - 2026-09-25
 
 ### Changed

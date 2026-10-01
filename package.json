@@ -35,11 +35,36 @@
       "properties": {
         "sqlTemplateFormatter.dialect": {
           "type": "string",
+          "scope": "language-overridable",
           "default": "postgresql",
-          "description": "SQL dialect passed to sql-formatter (e.g. postgresql, bigquery, mysql, sqlite, snowflake)."
+          "description": "SQL dialect passed to sql-formatter. It also decides how strings, quoted identifiers, and comments are read (e.g. whether \\ escapes a quote, whether # starts a comment).",
+          "enum": [
+            "bigquery",
+            "clickhouse",
+            "db2",
+            "db2i",
+            "duckdb",
+            "hive",
+            "mariadb",
+            "mysql",
+            "n1ql",
+            "plsql",
+            "postgresql",
+            "redshift",
+            "singlestoredb",
+            "snowflake",
+            "spark",
+            "sql",
+            "sqlite",
+            "tidb",
+            "transactsql",
+            "trino",
+            "tsql"
+          ]
         },
         "sqlTemplateFormatter.placeholderPatterns": {
           "type": "array",
+          "scope": "language-overridable",
           "items": {
             "type": "string"
           },
@@ -48,20 +73,27 @@
             "\\{\\{[\\s\\S]*?\\}\\}",
             "\\{[^{}]*\\}",
             "%\\([^)]*\\)s",
-            "%s"
+            "%s(?![A-Za-z0-9_])"
           ],
           "description": "Regex patterns for template placeholders, matched in order (list Jinja2 {{ }} before single { })."
         },
         "sqlTemplateFormatter.namedPrefixes": {
           "type": "array",
+          "scope": "language-overridable",
           "items": {
-            "type": "string"
+            "type": "string",
+            "enum": [
+              ":",
+              "@",
+              "$"
+            ]
           },
           "default": [],
-          "description": "Named parameter prefixes (e.g. [\":\"] for psycopg2). Caution: \":\" conflicts with PostgreSQL :: casts. Off by default."
+          "description": "Named parameter prefixes (e.g. [\":\"] for psycopg2's :name). PostgreSQL :: casts keep working. Off by default."
         },
         "sqlTemplateFormatter.keywordCase": {
           "type": "string",
+          "scope": "language-overridable",
           "enum": [
             "preserve",
             "upper",
@@ -72,11 +104,13 @@
         },
         "sqlTemplateFormatter.replaceOrdinals": {
           "type": "boolean",
+          "scope": "language-overridable",
           "default": true,
           "description": "Replace GROUP BY / ORDER BY ordinal numbers (e.g. GROUP BY 1, 2) with the referenced column names."
         },
         "sqlTemplateFormatter.commaPosition": {
           "type": "string",
+          "scope": "language-overridable",
           "enum": [
             "after",
             "before"
@@ -86,6 +120,7 @@
         },
         "sqlTemplateFormatter.keepFunctionsInline": {
           "type": "boolean",
+          "scope": "language-overridable",
           "default": false,
           "description": "Keep function calls (SUM(...), COUNT(CASE ... END), ...) on a single line instead of breaking their arguments across lines."
         }
@@ -93,20 +128,22 @@
     }
   },
   "scripts": {
-    "compile": "tsc -p ./",
-    "watch": "tsc -w -p ./",
+    "compile": "tsc -p ./ --noEmit && node scripts/build.mjs",
+    "watch": "node scripts/build.mjs --watch",
+    "pretest": "bun run compile",
     "test": "bun test",
     "package": "vsce package && python3 scripts/verify_vsix.py",
     "verify:vsix": "python3 scripts/verify_vsix.py",
-    "publish:vsce": "vsce publish"
-  },
-  "dependencies": {
-    "sql-formatter": "^15.4.0"
+    "publish:vsce": "vsce publish",
+    "publish:ovsx": "ovsx publish"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.0.0",
+    "esbuild": "^0.28.2",
+    "ovsx": "^1.2.0",
+    "sql-formatter": "^15.4.0",
     "typescript": "^5.5.0"
   }
 }

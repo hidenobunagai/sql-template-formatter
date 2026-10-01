@@ -1,7 +1,8 @@
 #!/usr/bin/env python3
 """Verify a packaged .vsix contains exactly the expected files and no leaks.
 
-Defense layer 2: exact inventory check. Defense layer 3: leak-pattern scan.
+Defense layer 2: exact inventory check (the two esbuild bundles plus the
+top-level manifest files, no node_modules). Defense layer 3: leak-pattern scan.
 Usage: python3 scripts/verify_vsix.py [path/to/*.vsix ...]
 Default: newest sql-template-formatter-*.vsix in the repo root.
 Exits non-zero on any violation.
@@ -13,21 +14,12 @@ import zipfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
-ALLOWED_NODE_MODULES = {
-    "sql-formatter",
-    "argparse",
-    "nearley",
-    "moo",
-    "railroad-diagrams",
-    "randexp",
-    "discontinuous-range",
-    "ret",
-}
-ALLOWED_NESTED_MODULES = {("nearley", "node_modules", "commander")}
-
 EXPECTED_TOP_LEVEL = {"package.json", "icon.png", "readme.md", "LICENSE.txt", "changelog.md"}
 REQUIRED_TOP_LEVEL = {"package.json", "icon.png", "readme.md", "LICENSE.txt"}
-REQUIRED_OUT = {"out/extension.js", "out/format.js", "out/ordinals.js"}
+# esbuild bundles everything into these two files (scripts/build.mjs): any other
+# out/ file is a stale tsc leftover, and any node_modules/ entry means the
+# bundle is no longer self-contained.
+EXPECTED_OUT = {"out/extension.js", "out/cli.js"}
 
 LEAK_PATTERNS = (
     ".code-review-graph",
@@ -71,16 +63,9 @@ def verify(path):
     bad = []
     for n in ext:
         rest = n[len("extension/"):]
-        if rest.startswith("out/"):
+        if rest in EXPECTED_OUT:
             continue
-        if rest.startswith("node_modules/"):
-            parts = rest.split("/")
-            if len(parts) >= 2 and parts[1] in ALLOWED_NODE_MODULES:
-                continue
-            if tuple(parts[1:4]) in ALLOWED_NESTED_MODULES:
-                continue
-            bad.append(n)
-        elif "/" not in rest:
+        if "/" not in rest:
             top_level.add(rest)
         else:
             bad.append(n)
@@ -95,9 +80,14 @@ def verify(path):
         problems.append("unexpected top-level files: " + ", ".join(sorted(unexpected_top)))
 
     out_files = {n[len("extension/"):] for n in ext if n.startswith("extension/out/")}
-    missing_out = REQUIRED_OUT - out_files
+    missing_out = EXPECTED_OUT - out_files
     if missing_out:
         problems.append("missing out/ files: " + ", ".join(sorted(missing_out)))
+
+    with zipfile.ZipFile(path) as z:
+        bundle = z.read("extension/out/extension.js").decode("utf-8") if "extension/out/extension.js" in names else ""
+    if 'require("sql-formatter")' in bundle:
+        problems.append("out/extension.js requires sql-formatter at runtime: it is not bundled")
 
     if problems:
         print(f"FAIL {path} ({len(ext)} files)")

@@ -63,24 +63,27 @@ git diff --name-only --diff-filter=ACM -- '*.sql' | xargs -r sql-template-format
 | `--no-ordinals` | Keep `GROUP BY 1` / `ORDER BY 1` as-is |
 | `--comma-position <p>` | `after` (default) keeps a wrapping comma at the end of the previous line; `before` moves it to the start of the next line |
 | `--keep-functions-inline` | Keep `SUM(...)` / `COUNT(CASE ... END)` on one line instead of breaking their arguments |
+| `--named-prefix <p>` | Named parameter prefix (`:`, `@`, or `$`); repeat for several. Same as the extension's `namedPrefixes` |
 | `--tab-width <n>`, `--tabs` | Indentation (default: 2 spaces) |
-| `-c`, `--config <file>` | Config JSON (default: the nearest `.sql-formatter.json`) |
+| `-c`, `--config <file>` | Config JSON (default: the `.sql-formatter.json` nearest to each file) |
 | `-h`, `--help`, `--version` | |
 
-The nearest ancestor `.sql-formatter.json` is picked up automatically. It accepts the standard `sql-formatter` keys (`language`, `keywordCase`, `tabWidth`, `useTabs`, `paramTypes.custom`) plus `placeholderPatterns`, `replaceOrdinals`, `commaPosition`, and `keepFunctionsInline`:
+Each file is formatted with the `.sql-formatter.json` nearest to it (searching its directory and then each parent, like Prettier); stdin uses the one nearest to the working directory. It accepts the standard `sql-formatter` keys (`language`, `keywordCase`, `tabWidth`, `useTabs`, `paramTypes.custom`, `paramTypes.named`) plus `placeholderPatterns`, `namedPrefixes`, `replaceOrdinals`, `commaPosition`, and `keepFunctionsInline`:
 
 ```json
 {
   "language": "postgresql",
   "keywordCase": "upper",
-  "placeholderPatterns": ["\\$\\{[^}]+\\}", "\\{\\{[\\s\\S]*?\\}\\}", "\\{[^{}]*\\}", "%\\([^)]*\\)s", "%s"],
+  "placeholderPatterns": ["\\$\\{[^}]+\\}", "\\{\\{[\\s\\S]*?\\}\\}", "\\{[^{}]*\\}", "%\\([^)]*\\)s", "%s(?![A-Za-z0-9_])"],
   "replaceOrdinals": true,
   "commaPosition": "after",
   "keepFunctionsInline": false
 }
 ```
 
-When neither `placeholderPatterns` nor `paramTypes.custom` is set, the extension's five default patterns apply, so placeholders survive untouched. The CLI does not read VS Code's `settings.json`; its defaults match the extension's defaults (`postgresql` + `upper` + ordinals replaced).
+When neither `placeholderPatterns` nor `paramTypes.custom` is set, the extension's five default patterns apply, so placeholders survive untouched. The CLI does not read VS Code's `settings.json`; its defaults match the extension's defaults (`postgresql` + `upper` + ordinals replaced), and every extension setting has a CLI flag or config key, so equal settings give byte-identical output.
+
+Exit codes: `0` success, `1` `--check` found an unformatted input, `2` an error (bad option or config, unreadable file, unparsable SQL). When both happen, `2` wins.
 
 The file's final newline is **preserved**: a newline-terminated file stays newline-terminated (extra trailing blank lines collapse to one) and a file without one is left alone. `sql-formatter` re-prints the parse tree, so the last newline is restored explicitly — otherwise every run would leave a `\ No newline at end of file` diff behind and `--check` could never pass on a normal file. Line endings are normalized to LF, the same default as Prettier (`endOfLine: "lf"`).
 
@@ -88,15 +91,17 @@ The file's final newline is **preserved**: a newline-terminated file stays newli
 
 ## Settings
 
+Every setting can be set per language (`"[sql]": { … }`) and, in a multi-root workspace, per folder.
+
 | Setting | Default | Description |
 |---|---|---|
-| `sqlTemplateFormatter.dialect` | `postgresql` | Dialect (postgresql, bigquery, mysql, sqlite, snowflake, etc.) |
+| `sqlTemplateFormatter.dialect` | `postgresql` | Dialect (postgresql, bigquery, mysql, sqlite, snowflake, etc. — any dialect sql-formatter supports). It also decides how strings and comments are read: whether `\` escapes a quote, whether `#` starts a comment |
 | `sqlTemplateFormatter.placeholderPatterns` | Regexes for `${...}`, `{{...}}`, `{...}`, `%(name)s`, `%s` (5 entries) | Array of placeholder regex **strings**. **Earlier patterns take priority** |
-| `sqlTemplateFormatter.namedPrefixes` | `[]` | Prefixes for named parameters (e.g. `[":"]`). Compatible with `::` casts |
+| `sqlTemplateFormatter.namedPrefixes` | `[]` | Prefixes for named parameters: `:`, `@`, or `$` (e.g. `[":"]` for psycopg2's `:name`). PostgreSQL `::` casts keep working |
 | `sqlTemplateFormatter.keywordCase` | `upper` | Keyword casing (preserve/upper/lower) |
-| `sqlTemplateFormatter.replaceOrdinals` | `true` | Replace `GROUP BY`/`ORDER BY` ordinals (e.g. `1, 2`) with the referenced column names. Ordinals referencing placeholder expressions, aggregates without alias, or `SELECT *` are left untouched |
+| `sqlTemplateFormatter.replaceOrdinals` | `true` | Replace `GROUP BY`/`ORDER BY` ordinals (e.g. `1, 2`) with the referenced columns — only where the meaning provably stays the same. `GROUP BY` gets the column's expression (never its alias), `ORDER BY` a unique alias or the expression. Ordinals are left untouched when the column is `*`, a constant, a placeholder expression, an aggregate in `GROUP BY`, or an expression mentioning an output alias, and in the `ORDER BY` of a `UNION`/`EXCEPT`/`INTERSECT` |
 | `sqlTemplateFormatter.commaPosition` | `after` | `after` keeps a wrapping comma at the end of the previous line; `before` moves it to the start of the next line with a space after it (`id` / `    , name`), keeping a trailing `-- comment` with its own item |
-| `sqlTemplateFormatter.keepFunctionsInline` | `false` | Re-join the formatter's line breaks inside `word(...)` groups so `SUM(...)`, `COUNT(CASE … END)`, and nested calls stay on one line. Newlines inside string literals, `$$…$$` bodies, and comments are never removed |
+| `sqlTemplateFormatter.keepFunctionsInline` | `false` | Re-join the formatter's line breaks inside `word(...)` groups so `SUM(...)`, `COUNT(CASE … END)`, and nested calls stay on one line. Only a paren a name touches (`SUM(`) counts as a call, so CTE bodies (`AS (`), subqueries, `IN (…)`, `EXISTS (…)`, and `OVER (…)` keep their layout. Newlines inside string literals, `$$…$$` bodies, and comments are never removed |
 
 ### Customizing placeholders
 
@@ -107,7 +112,7 @@ The file's final newline is **preserved**: a newline-terminated file stays newli
     "\\{\\{[\\s\\S]*?\\}\\}",
     "\\{[^{}]*\\}",
     "%\\([^)]*\\)s",
-    "%s",
+    "%s(?![A-Za-z0-9_])",
     "@\\w+"
   ],
   "sqlTemplateFormatter.namedPrefixes": [":"]
@@ -125,8 +130,8 @@ The file's final newline is **preserved**: a newline-terminated file stays newli
 
 ```bash
 bun install
-bun run compile   # tsc build
-bun test          # unit tests (bun:test)
+bun run compile   # type-check (tsc --noEmit) + esbuild bundle into out/
+bun run test      # compiles, then runs the unit tests (bun:test); the CLI tests need out/
 node out/cli.js --help   # run the CLI from the build output
 bun run package   # build .vsix
 ```
@@ -135,13 +140,13 @@ Press F5 to launch an Extension Development Host for manual testing.
 
 ## Release (maintainers)
 
-1. Bump the version in `package.json` and tag it: `git tag vX.Y.Z`
+1. Bump the version in `package.json` and tag it: `git tag vX.Y.Z` (the publish workflow refuses a tag that does not match the version, and runs the tests before publishing anything)
 2. Push the tag: `.github/workflows/publish.yml` publishes to the VS Code Marketplace (VSCE), Open VSX (OVSX), and npm.
    npm uses [trusted publishing (OIDC)](https://docs.npmjs.com/trusted-publishers) — no token or repository secret; the trust relationship is registered on the package's npm settings page and must name this workflow file (`publish.yml`). Provenance attestations are attached automatically.
 3. Manual alternative:
    - VS Marketplace: run `bun run publish:vsce` with `VSCE_PAT` set
      (the script is deliberately **not** named `publish`: npm runs a `publish` script as a lifecycle step of `npm publish`, so it would fire again on every npm release and fail without `VSCE_PAT`)
-   - Open VSX: run `bunx ovsx publish -p $OVSX_PAT` with `OVSX_PAT` set
+   - Open VSX: run `bun run publish:ovsx -p $OVSX_PAT` with `OVSX_PAT` set
    - npm: run `npm publish --access public` with `NODE_AUTH_TOKEN` set (or, from CI, rely on trusted publishing)
 
 Never commit PATs in plain text. Manage them with dotenvx or similar.

@@ -1,8 +1,12 @@
 name: CI
 
+# Pushes to main and every pull request; a feature branch with an open PR is
+# covered by the pull_request run instead of running everything twice.
 on:
   push:
+    branches: [main]
   pull_request:
+  workflow_dispatch:
 
 jobs:
   verify:
@@ -10,6 +14,8 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.3.8
       - run: bun install --frozen-lockfile
       - run: bun run compile
       - run: bun test
