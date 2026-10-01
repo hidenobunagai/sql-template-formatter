@@ -8,7 +8,9 @@
 import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import * as path from 'node:path';
 import { parseArgs } from 'node:util';
+import { ConfigError as SqlFormatterConfigError } from 'sql-formatter';
 import {
+  ConfigError,
   DEFAULT_PLACEHOLDER_PATTERNS,
   formatSql,
   validateConfig,
@@ -156,16 +158,26 @@ function main(): number {
   }
 
   // Each file gets the config nearest to it (like Prettier); stdin gets the
-  // one nearest to the working directory. --config overrides both.
-  const resolved = new Map<string, Resolved>();
+  // one nearest to the working directory. --config overrides both. A config
+  // is read and validated once; its error names the config file.
+  const resolved = new Map<string, Resolved | Error>();
   const resolveFor = (dir: string): Resolved => {
     const configPath = values.config ?? findConfigPath(dir);
     const key = configPath ?? '';
     let entry = resolved.get(key);
     if (entry === undefined) {
-      entry = build(configPath === undefined ? {} : readConfig(configPath));
+      try {
+        entry = build(configPath === undefined ? {} : readConfig(configPath));
+        validateConfig(entry.config, entry.editorOptions);
+      } catch (err) {
+        // readConfig() already names the file; validation errors do not.
+        const message = (err as Error).message;
+        const named = configPath === undefined || message.startsWith('cannot read config');
+        entry = new Error(named ? message : `${configPath}: ${message}`);
+      }
       resolved.set(key, entry);
     }
+    if (entry instanceof Error) throw entry;
     return entry;
   };
   const format = (text: string, dir: string): string => {
@@ -194,13 +206,54 @@ function main(): number {
     return 0;
   }
 
+  // Preflight: resolve every file's config before formatting anything, so a
+  // bad config for the last file cannot leave the earlier ones rewritten.
+  // (A SQL syntax error still only shows up when its own file is formatted.)
+  const configErrors = new Set<string>();
+  for (const file of positionals) {
+    try {
+      resolveFor(path.dirname(file));
+    } catch (err) {
+      configErrors.add((err as Error).message);
+    }
+  }
+  if (configErrors.size > 0) {
+    for (const message of configErrors) console.error(`sql-template-formatter: ${message}`);
+    return 2;
+  }
+
+  // Format every file before acting on any of them. A configuration error
+  // (ours or sql-formatter's) anywhere aborts the whole run untouched, so it
+  // can never leave earlier files rewritten; other errors (unreadable file,
+  // SQL syntax) only skip their own file, like Prettier.
+  type Outcome = { file: string; input: string; output: string } | { file: string; error: Error };
+  const outcomes: Outcome[] = positionals.map((file) => {
+    try {
+      const input = readFileSync(file, 'utf8');
+      return { file, input, output: format(input, path.dirname(file)) };
+    } catch (err) {
+      return { file, error: err as Error };
+    }
+  });
+  const configFailures = outcomes.filter(
+    (o): o is { file: string; error: Error } =>
+      'error' in o && (o.error instanceof ConfigError || o.error instanceof SqlFormatterConfigError)
+  );
+  if (configFailures.length > 0) {
+    for (const { file, error } of configFailures) {
+      console.error(`sql-template-formatter: ${file}: ${error.message}`);
+    }
+    return 2;
+  }
+
   // 2 (an error) outranks 1 (unformatted): a run that could not check every
   // file must not look like it merely found formatting differences.
   let status = 0;
-  for (const file of positionals) {
+  for (const outcome of outcomes) {
+    const { file } = outcome;
     try {
-      const input = readFileSync(file, 'utf8');
-      const output = format(input, path.dirname(file));
+      if ('error' in outcome) throw outcome.error;
+      const { input, output } = outcome;
       if (values.check) {
         if (output !== input) {
           console.error(`sql-template-formatter: ${file} is not formatted`);

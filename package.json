@@ -89,7 +89,7 @@
             ]
           },
           "default": [],
-          "description": "Named parameter prefixes (e.g. [\":\"] for psycopg2's :name). PostgreSQL :: casts keep working. Off by default."
+          "description": "Named parameter prefixes (e.g. [\":\"] for :name as used by SQLAlchemy text(), sqlite3, or python-oracledb; psycopg2's %s / %(name)s are covered by the default placeholderPatterns). PostgreSQL :: casts keep working. Off by default."
         },
         "sqlTemplateFormatter.keywordCase": {
           "type": "string",

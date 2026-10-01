@@ -14,6 +14,14 @@ interface SelectColumn {
   readonly expressionEnd: number;
   readonly alias: string | undefined;
   readonly aggregate: boolean;
+  /**
+   * The item ends in a bare name that is neither clearly an implicit alias
+   * nor clearly part of the expression (`INTERVAL 1 DAY`,
+   * `x::double precision`): replacing its ordinal could change the query.
+   */
+  readonly uncertain: boolean;
+  /** `*` or `t.*`: expands to an unknown number of columns. */
+  readonly star: boolean;
 }
 
 interface Clause {
@@ -102,7 +110,8 @@ const RESERVED = new Set([
 
 /**
  * Keywords that take an operand after them: a name following one of these is
- * that operand (`a IS NOT b`, `x LIKE y`), never an implicit alias.
+ * that operand (`a IS NOT b`, `x LIKE y`, `a IS DISTINCT FROM b`,
+ * `ts AT TIME ZONE zone_name`, `sum(x) OVER w`), never an implicit alias.
  */
 const OPERAND_KEYWORDS = new Set([
   "and",
@@ -112,15 +121,23 @@ const OPERAND_KEYWORDS = new Set([
   "case",
   "collate",
   "distinct",
+  "div",
   "else",
   "escape",
+  "from",
+  "glob",
   "ilike",
   "in",
   "interval",
   "is",
   "like",
+  "match",
+  "mod",
   "not",
+  "of",
   "or",
+  "over",
+  "overlaps",
   "regexp",
   "rlike",
   "similar",
@@ -128,7 +145,12 @@ const OPERAND_KEYWORDS = new Set([
   "time",
   "to",
   "when",
+  "xor",
+  "zone",
 ]);
+
+/** Keywords that can end an expression (`a IS NULL`, `CASE … END`). */
+const TERMINAL_KEYWORDS = new Set(["end", "false", "isnull", "notnull", "null", "true", "unknown"]);
 
 const SET_OPERATORS = new Set(["union", "except", "intersect", "minus"]);
 
@@ -187,6 +209,11 @@ function isNumberToken(token: SqlToken): boolean {
   return /^\d/.test(token.text);
 }
 
+/** An ordinal is a plain positive integer: `1.5` and `1e0` are constants, not column numbers. */
+function isOrdinalToken(token: SqlToken): boolean {
+  return token.kind === Kind.Code && /^\d+$/.test(token.text);
+}
+
 function isPlaceholderToken(token: SqlToken): boolean {
   return token.kind === Kind.Placeholder;
 }
@@ -195,31 +222,51 @@ function isNameToken(token: SqlToken): boolean {
   return token.kind === Kind.Code && /^[\p{L}_]/u.test(token.text);
 }
 
+/** Index of the nearest token before `index` that is not a comment, or -1. */
+function previousCode(tokens: readonly SqlToken[], index: number): number {
+  let j = index - 1;
+  while (j >= 0 && isCommentToken(tokens[j] as SqlToken)) j -= 1;
+  return j;
+}
+
 function isSelectStart(tokens: readonly SqlToken[], index: number): boolean {
-  if (index === 0) return true;
-  const previous = tokens[index - 1];
-  const text = previous?.text.toLowerCase() ?? "";
+  const p = previousCode(tokens, index);
+  const previous = tokens[p];
+  if (previous === undefined) return true;
+  const text = previous.text.toLowerCase();
   if (text === "all" || text === "distinct") {
-    return SET_OPERATORS.has(tokens[index - 2]?.text.toLowerCase() ?? "");
+    return SET_OPERATORS.has(tokens[previousCode(tokens, p)]?.text.toLowerCase() ?? "");
   }
   return (
     text === "(" ||
     text === ";" ||
     text === ")" ||
     SET_OPERATORS.has(text) ||
-    previous?.kind === Kind.LineComment ||
-    previous?.kind === Kind.BlockComment ||
-    (previous !== undefined && isPlaceholderToken(previous))
+    isPlaceholderToken(previous)
   );
 }
 
-/** True when the SELECT at `index` is a later operand of UNION / EXCEPT / INTERSECT. */
+/**
+ * True when the SELECT at `index` is a later operand of UNION / EXCEPT /
+ * INTERSECT. Comments between the operator and the SELECT are skipped.
+ */
 function followsSetOperator(tokens: readonly SqlToken[], index: number): boolean {
-  let previous = tokens[index - 1]?.text.toLowerCase() ?? "";
+  let p = previousCode(tokens, index);
+  let previous = tokens[p]?.text.toLowerCase() ?? "";
   if (previous === "all" || previous === "distinct") {
-    previous = tokens[index - 2]?.text.toLowerCase() ?? "";
+    p = previousCode(tokens, p);
+    previous = tokens[p]?.text.toLowerCase() ?? "";
   }
   return SET_OPERATORS.has(previous);
+}
+
+/** `FROM` inside `a IS [NOT] DISTINCT FROM b` belongs to the expression, not the clause. */
+function isDistinctFromOperator(tokens: readonly SqlToken[], index: number): boolean {
+  const p = previousCode(tokens, index);
+  const previous = tokens[p];
+  if (previous === undefined || !isKeyword(previous, "distinct")) return false;
+  const before = tokens[previousCode(tokens, p)];
+  return before !== undefined && isKeyword(before, "is", "not");
 }
 
 /** Index of the first select-list token, past DISTINCT / ALL / DISTINCT ON (...) / TOP n. */
@@ -271,46 +318,85 @@ function isCommentToken(token: SqlToken): boolean {
   return token.kind === Kind.LineComment || token.kind === Kind.BlockComment;
 }
 
-/** Extract alias and aggregate flag from one select-list item. */
+function isQuotedIdentifier(token: SqlToken): boolean {
+  return token.kind === Kind.Quoted && /^["`[]/.test(token.text);
+}
+
+/** `a`, `t.a`, `s.t.a`: names joined by dots. */
+function isSimpleColumn(tokens: readonly SqlToken[]): boolean {
+  return (
+    tokens.length % 2 === 1 &&
+    tokens.every((token, i) => (i % 2 === 0 ? isNameToken(token) : token.text === "."))
+  );
+}
+
+/**
+ * Extract alias and aggregate flag from one select-list item.
+ *
+ * Without `AS`, a trailing bare name is only taken for an implicit alias when
+ * the tokens before it clearly end an expression (`f(x) n`, `CASE … END n`,
+ * `t.a n`, `1 one`); it is only taken for part of the expression when the
+ * token before it clearly expects an operand (an operator or an
+ * {@link OPERAND_KEYWORDS} word) or it is a value keyword (`NULL`). Anything
+ * else is marked uncertain and keeps its ordinal.
+ */
 function columnOf(tokens: readonly SqlToken[], start: number, end: number): SelectColumn {
   const visible = tokens.slice(start, end).filter((token) => !isCommentToken(token));
   const first = visible[0];
   const last = visible[visible.length - 1];
   if (first === undefined || last === undefined) {
-    return { expressionStart: 0, expressionEnd: 0, alias: undefined, aggregate: false };
+    return {
+      expressionStart: 0,
+      expressionEnd: 0,
+      alias: undefined,
+      aggregate: false,
+      uncertain: true,
+      star: false,
+    };
   }
   const secondLast = visible[visible.length - 2];
-  const simpleColumn =
-    visible.length % 2 === 1 &&
-    visible.every((token, i) => (i % 2 === 0 ? isNameToken(token) : token.text === "."));
-  let alias: string | undefined;
-  let expressionEnd = last.end;
-  if (
-    secondLast !== undefined &&
-    isKeyword(secondLast, "as") &&
-    (isNameToken(last) || (last.kind === Kind.Quoted && /^["`[]/.test(last.text)))
-  ) {
-    alias = last.text;
-    expressionEnd = secondLast.start;
-  } else if (
-    secondLast !== undefined &&
-    isNameToken(last) &&
-    !RESERVED.has(last.text.toLowerCase()) &&
-    !simpleColumn &&
-    !isOperator(secondLast) &&
-    secondLast.text !== "." &&
-    !OPERAND_KEYWORDS.has(secondLast.text.toLowerCase())
-  ) {
-    alias = last.text;
-    expressionEnd = last.start;
-  }
   const aggregate = AGGREGATE_FUNCTIONS.has(first.text.toLowerCase()) || first.text === "*";
-  return {
+  const star = last.text === "*";
+  const column = (alias: string | undefined, expressionEnd: number, uncertain = false): SelectColumn => ({
     expressionStart: first.start,
     expressionEnd,
     alias,
     aggregate,
-  };
+    uncertain: uncertain || star,
+    star,
+  });
+
+  if (secondLast === undefined || isSimpleColumn(visible)) return column(undefined, last.end);
+  if (isKeyword(secondLast, "as")) {
+    // A string-literal alias (MySQL `AS 'x'`) cannot be written back as a name.
+    return isNameToken(last) || isQuotedIdentifier(last)
+      ? column(last.text, secondLast.start)
+      : column(undefined, secondLast.start, true);
+  }
+  const lastIsName = isNameToken(last);
+  if (!lastIsName && !isQuotedIdentifier(last)) return column(undefined, last.end);
+
+  const lower = last.text.toLowerCase();
+  const secondLower = secondLast.text.toLowerCase();
+  if (lastIsName && TERMINAL_KEYWORDS.has(lower)) return column(undefined, last.end);
+  if (
+    secondLast.text === "." ||
+    isOperator(secondLast) ||
+    (isNameToken(secondLast) && OPERAND_KEYWORDS.has(secondLower))
+  ) {
+    return column(undefined, last.end);
+  }
+  if (lastIsName && RESERVED.has(lower)) return column(undefined, last.end, true);
+
+  const prefix = visible.slice(0, -1);
+  const endsExpression =
+    secondLast.text === ")" ||
+    secondLast.text === "]" ||
+    isKeyword(secondLast, "end") ||
+    isQuotedIdentifier(secondLast) ||
+    isSimpleColumn(prefix) ||
+    (prefix.length === 1 && (isNumberToken(secondLast) || secondLast.kind === Kind.Quoted));
+  return endsExpression ? column(last.text, last.start) : column(undefined, last.end, true);
 }
 
 function flatten(text: string): string {
@@ -388,6 +474,7 @@ export function replaceOrdinals(sql: string, kinds: Uint8Array): string {
     kind: "group" | "order",
   ): string | undefined => {
     if (kind === "order" && scope.setOperation) return undefined;
+    if (column.uncertain) return undefined;
     const aliases = scope.columns
       .map((c) => c.alias)
       .filter((alias): alias is string => alias !== undefined)
@@ -426,7 +513,7 @@ export function replaceOrdinals(sql: string, kinds: Uint8Array): string {
         const firstItemToken = itemTokens[0];
         if (
           firstItemToken !== undefined &&
-          isNumberToken(firstItemToken) &&
+          isOrdinalToken(firstItemToken) &&
           itemTokens
             .slice(1)
             .every(
@@ -438,10 +525,14 @@ export function replaceOrdinals(sql: string, kinds: Uint8Array): string {
         ) {
           ordinalToken = firstItemToken;
         }
-        if (ordinalToken === undefined || !isNumberToken(ordinalToken)) continue;
+        if (ordinalToken === undefined) continue;
         const ordinal = Number.parseInt(ordinalToken.text, 10);
         const column = scope.columns[ordinal - 1];
         if (column === undefined) continue;
+        // `*` / `t.*` expands to an unknown number of columns: every ordinal
+        // from that item on points somewhere this scan cannot see.
+        const star = scope.columns.findIndex((c) => c.star);
+        if (star !== -1 && ordinal - 1 >= star) continue;
         const text = resolveOrdinal(scope, column, clause === scope.orderBy ? "order" : "group");
         if (text === undefined || text.length === 0) continue;
         replacements.push({ start: ordinalToken.start, end: ordinalToken.end, text });
@@ -472,7 +563,7 @@ export function replaceOrdinals(sql: string, kinds: Uint8Array): string {
     const scope = scopes[scopes.length - 1];
     if (scope === undefined || token.depth !== scope.depth) continue;
     if (scope.phase === "select") {
-      if (isKeyword(token, "from")) {
+      if (isKeyword(token, "from") && !isDistinctFromOperator(tokens, index)) {
         if (scope.columnStart < index) {
           scope.columns.push(columnOf(tokens, scope.columnStart, index));
         }
