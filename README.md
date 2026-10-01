@@ -131,7 +131,7 @@ Every setting can be set per language (`"[sql]": { … }`) and, in a multi-root 
 ```bash
 bun install
 bun run compile   # type-check (tsc --noEmit) + esbuild bundle into out/
-bun test          # unit tests (bun:test)
+bun run test      # compiles, then runs the unit tests (bun:test); the CLI tests need out/
 node out/cli.js --help   # run the CLI from the build output
 bun run package   # build .vsix
 ```
@@ -140,13 +140,13 @@ Press F5 to launch an Extension Development Host for manual testing.
 
 ## Release (maintainers)
 
-1. Bump the version in `package.json` and tag it: `git tag vX.Y.Z`
+1. Bump the version in `package.json` and tag it: `git tag vX.Y.Z` (the publish workflow refuses a tag that does not match the version, and runs the tests before publishing anything)
 2. Push the tag: `.github/workflows/publish.yml` publishes to the VS Code Marketplace (VSCE), Open VSX (OVSX), and npm.
    npm uses [trusted publishing (OIDC)](https://docs.npmjs.com/trusted-publishers) — no token or repository secret; the trust relationship is registered on the package's npm settings page and must name this workflow file (`publish.yml`). Provenance attestations are attached automatically.
 3. Manual alternative:
    - VS Marketplace: run `bun run publish:vsce` with `VSCE_PAT` set
      (the script is deliberately **not** named `publish`: npm runs a `publish` script as a lifecycle step of `npm publish`, so it would fire again on every npm release and fail without `VSCE_PAT`)
-   - Open VSX: run `bunx ovsx publish -p $OVSX_PAT` with `OVSX_PAT` set
+   - Open VSX: run `bun run publish:ovsx -p $OVSX_PAT` with `OVSX_PAT` set
    - npm: run `npm publish --access public` with `NODE_AUTH_TOKEN` set (or, from CI, rely on trusted publishing)
 
 Never commit PATs in plain text. Manage them with dotenvx or similar.

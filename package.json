@@ -130,16 +130,19 @@
   "scripts": {
     "compile": "tsc -p ./ --noEmit && node scripts/build.mjs",
     "watch": "node scripts/build.mjs --watch",
+    "pretest": "bun run compile",
     "test": "bun test",
     "package": "vsce package && python3 scripts/verify_vsix.py",
     "verify:vsix": "python3 scripts/verify_vsix.py",
-    "publish:vsce": "vsce publish"
+    "publish:vsce": "vsce publish",
+    "publish:ovsx": "ovsx publish"
   },
   "devDependencies": {
     "@types/node": "^24.0.0",
     "@types/vscode": "^1.85.0",
     "@vscode/vsce": "^3.0.0",
     "esbuild": "^0.28.2",
+    "ovsx": "^1.2.0",
     "sql-formatter": "^15.4.0",
     "typescript": "^5.5.0"
   }

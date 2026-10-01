@@ -33,6 +33,8 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 ### Changed
 
 - **The extension and the CLI are esbuild bundles.** `out/extension.js` and `out/cli.js` now inline sql-formatter, so the VSIX shrinks from 445 files / 950 KB to 9 files / 450 KB with no `node_modules`, and the npm package has no runtime dependencies. `scripts/verify_vsix.py` now requires exactly the two bundles, and the publish workflow runs the CLI from the unpacked npm tarball.
+- **Publishing is gated on tests and a matching tag.** A new `verify` job in `publish.yml` checks that the pushed tag equals `v` + the `package.json` version, builds, and runs the tests; both publishing jobs wait for it. `vsce` and `ovsx` now run from `node_modules` (pinned by `bun.lock`, `ovsx` added as a dev dependency) instead of `npx --yes` fetching the latest release into a job holding the marketplace tokens, and the npm upgrade is pinned to `11.20.0` instead of `@latest`.
+- **CI runs on pushes to `main` and on pull requests** (plus manual runs) instead of twice for every PR branch push, with Bun pinned like the publish workflow. `bun run test` compiles first (`pretest`), since the CLI tests run the built `out/cli.js`.
 - **The CLI picks the `.sql-formatter.json` nearest to each file** instead of the one nearest to the working directory, so `sql-template-formatter --check a/x.sql b/y.sql` honours `a/` and `b/` configs. stdin still uses the working directory.
 
 ## [0.0.16] - 2026-09-25
