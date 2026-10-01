@@ -130,7 +130,7 @@ Every setting can be set per language (`"[sql]": { … }`) and, in a multi-root 
 
 ```bash
 bun install
-bun run compile   # tsc build
+bun run compile   # type-check (tsc --noEmit) + esbuild bundle into out/
 bun test          # unit tests (bun:test)
 node out/cli.js --help   # run the CLI from the build output
 bun run package   # build .vsix

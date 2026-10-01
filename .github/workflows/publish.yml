@@ -77,12 +77,15 @@ jobs:
         run: npm install -g npm@latest
       # Guards the packaging trap: `out/` is gitignored, and `files` in
       # package.json is unusable here (VSCE rejects it next to .vscodeignore),
-      # so the tarball inventory depends on .npmignore alone.
-      - name: Verify the npm tarball ships the CLI
+      # so the tarball inventory depends on .npmignore alone. The CLI is an
+      # esbuild bundle with no runtime dependencies, so it must run straight
+      # out of the unpacked tarball with no node_modules next to it.
+      - name: Verify the npm tarball ships a working CLI
         run: |
-          npm pack --dry-run 2>&1 | tee /tmp/npm-pack.txt
-          grep -q "out/cli.js" /tmp/npm-pack.txt
-          grep -q "out/ordinals.js" /tmp/npm-pack.txt
+          mkdir -p /tmp/npm-pack
+          npm pack --pack-destination /tmp/npm-pack
+          tar -xzf /tmp/npm-pack/*.tgz -C /tmp/npm-pack
+          echo "select a from t;" | node /tmp/npm-pack/package/out/cli.js | grep -q "^SELECT$"
       # Idempotent on purpose: re-running the workflow (for example to retry the
       # marketplaces after an Open VSX 503) must not fail just because npm already
       # has this version.

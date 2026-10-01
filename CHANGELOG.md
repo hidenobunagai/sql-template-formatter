@@ -32,6 +32,7 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 
 ### Changed
 
+- **The extension and the CLI are esbuild bundles.** `out/extension.js` and `out/cli.js` now inline sql-formatter, so the VSIX shrinks from 445 files / 950 KB to 9 files / 450 KB with no `node_modules`, and the npm package has no runtime dependencies. `scripts/verify_vsix.py` now requires exactly the two bundles, and the publish workflow runs the CLI from the unpacked npm tarball.
 - **The CLI picks the `.sql-formatter.json` nearest to each file** instead of the one nearest to the working directory, so `sql-template-formatter --check a/x.sql b/y.sql` honours `a/` and `b/` configs. stdin still uses the working directory.
 
 ## [0.0.16] - 2026-09-25

@@ -39,3 +39,4 @@ architecture.json
 how_it_works.png
 problem.png
 
+node_modules/**
