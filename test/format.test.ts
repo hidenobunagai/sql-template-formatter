@@ -197,6 +197,58 @@ describe('formatSql', () => {
     );
   });
 
+  test('does not mistake a :: cast for a column alias', () => {
+    expect(formatSql('SELECT created_at::date, count(*) FROM t GROUP BY 1;', config)).toBe(
+      'SELECT\n  created_at::date,\n  count(*)\nFROM\n  t\nGROUP BY\n  created_at::date;'
+    );
+  });
+
+  test('copies the expression, not the alias, into GROUP BY', () => {
+    expect(formatSql('SELECT upper(name) AS n, count(*) FROM t GROUP BY 1;', config)).toBe(
+      'SELECT\n  upper(name) AS n,\n  count(*)\nFROM\n  t\nGROUP BY\n  upper(name);'
+    );
+  });
+
+  test('keeps a GROUP BY ordinal whose expression mentions an output alias', () => {
+    // GROUP BY created_at would group by the raw input column in PostgreSQL.
+    expect(
+      formatSql("SELECT date_trunc('day', created_at) AS created_at, count(*) FROM t GROUP BY 1;", config)
+    ).toBe(
+      "SELECT\n  date_trunc('day', created_at) AS created_at,\n  count(*)\nFROM\n  t\nGROUP BY\n  1;"
+    );
+  });
+
+  test('keeps ORDER BY ordinals of a set operation', () => {
+    expect(formatSql('SELECT a FROM t UNION ALL SELECT b FROM u ORDER BY 1;', config)).toBe(
+      'SELECT\n  a\nFROM\n  t\nUNION ALL\nSELECT\n  b\nFROM\n  u\nORDER BY\n  1;'
+    );
+    expect(formatSql('SELECT a FROM t UNION (SELECT b FROM u) ORDER BY 1;', config)).toContain(
+      'ORDER BY\n  1;'
+    );
+  });
+
+  test('skips DISTINCT when copying the first column', () => {
+    expect(formatSql('SELECT DISTINCT upper(a), b FROM t ORDER BY 1, 2;', config)).toBe(
+      'SELECT DISTINCT\n  upper(a),\n  b\nFROM\n  t\nORDER BY\n  upper(a),\n  b;'
+    );
+  });
+
+  test('never treats an operand keyword as an implicit alias', () => {
+    expect(formatSql('SELECT a IS NULL, b LIKE c FROM t ORDER BY 1, 2;', config)).toBe(
+      'SELECT\n  a IS NULL,\n  b LIKE c\nFROM\n  t\nORDER BY\n  a IS NULL,\n  b LIKE c;'
+    );
+  });
+
+  test('keeps ordinals that point at constants', () => {
+    expect(formatSql("SELECT 'x' AS k, 5, a FROM t GROUP BY 1, 2, 3;", config)).toBe(
+      "SELECT\n  'x' AS k,\n  5,\n  a\nFROM\n  t\nGROUP BY\n  1,\n  2,\n  a;"
+    );
+  });
+
+  test('keeps an ORDER BY ordinal whose alias is not unique', () => {
+    expect(formatSql('SELECT a AS n, b AS n FROM t ORDER BY 1;', config)).toContain('ORDER BY\n  1;');
+  });
+
   test('keeps the trailing newline when the input has one', () => {
     expect(formatSql('select id from users;\n', config)).toBe(
       'SELECT\n  id\nFROM\n  users;\n'

@@ -3,6 +3,12 @@
 Notable changes to the **SQL Template Formatter** VS Code extension.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`replaceOrdinals` no longer changes what a query means.** GROUP BY now copies the column's expression instead of its alias (PostgreSQL resolves a GROUP BY name to an input column first, so `date_trunc('day', created_at) AS created_at … GROUP BY 1` used to become a grouping by the raw column). An ordinal is kept when its expression mentions any output alias, is a bare constant, holds a placeholder, or is an aggregate (GROUP BY); the ORDER BY of a `UNION` / `EXCEPT` / `INTERSECT` keeps its ordinals; an ORDER BY alias is only used when it is unique. A `::` cast is no longer read as an alias (`created_at::date` → `GROUP BY date`), operand keywords (`a IS NULL`, `b LIKE c`) are never taken for implicit aliases, and `DISTINCT` / `DISTINCT ON (…)` / `TOP n` are skipped when reading the first column (`ORDER BY DISTINCT upper(a)`).
+
 ## [0.0.16] - 2026-09-25
 
 ### Changed
