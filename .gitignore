@@ -12,3 +12,6 @@ out/
 
 # npm pack artifact (bun pm pack / npm pack)
 *.tgz
+
+# bun.lock is the only lockfile (CI installs with bun --frozen-lockfile)
+package-lock.json

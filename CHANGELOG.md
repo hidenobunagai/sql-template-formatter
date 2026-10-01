@@ -37,6 +37,10 @@ Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); version
 - **CI runs on pushes to `main` and on pull requests** (plus manual runs) instead of twice for every PR branch push, with Bun pinned like the publish workflow. `bun run test` compiles first (`pretest`), since the CLI tests run the built `out/cli.js`.
 - **The CLI picks the `.sql-formatter.json` nearest to each file** instead of the one nearest to the working directory, so `sql-template-formatter --check a/x.sql b/y.sql` honours `a/` and `b/` configs. stdin still uses the working directory.
 
+### Removed
+
+- **Repository clutter**: the `poc/` experiments, the one-off icon scripts in `scratch/`, the `.superpowers/` progress ledger, the empty `.mcp.json` / `opencode.jsonc`, and `package-lock.json`. `bun.lock` is the only lockfile — CI and both publish jobs install with `bun --frozen-lockfile`, and the npm lockfile had already drifted from it (it still listed `sql-formatter` as a runtime dependency). None of these were ever packaged.
+
 ## [0.0.16] - 2026-09-25
 
 ### Changed
