@@ -4,6 +4,7 @@ src/**
 test/**
 poc/**
 docs/**
+tools/**
 **/*.map
 .gitignore
 .npmignore

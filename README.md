@@ -4,6 +4,8 @@
 [![Visual Studio Marketplace Downloads](https://img.shields.io/visual-studio-marketplace/d/HidenobuNagai.sql-template-formatter)](https://marketplace.visualstudio.com/items?itemName=HidenobuNagai.sql-template-formatter)
 [![Open VSX Version](https://img.shields.io/open-vsx/v/HidenobuNagai/sql-template-formatter?label=Open%20VSX)](https://open-vsx.org/extension/HidenobuNagai/sql-template-formatter)
 
+![SQL Template Formatter demo](https://raw.githubusercontent.com/hidenobunagai/sql-template-formatter/main/docs/demo.gif)
+
 A VS Code extension that formats `.sql` files containing template placeholders (common in Python projects) without breaking them. Existing SQL formatters treat `${XXX}` as a syntax error; this one does not.
 The same formatter also ships as a **CLI** (`npx sql-template-formatter`) for CI, pre-commit, and AI-agent hooks — it calls the identical core, so both produce byte-identical output.
 
