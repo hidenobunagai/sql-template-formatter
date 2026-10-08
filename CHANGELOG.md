@@ -3,6 +3,12 @@
 Notable changes to the **SQL Template Formatter** VS Code extension.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [Unreleased]
+
+### Fixed
+
+- **`commaPosition: "before"` keeps multi-line items aligned.** The `, ` added in front of an item pushed only its first line right, so the rest of a `CASE … END`, a subquery, or a wrapped function call was left one level short and `END` / `)` lined up with the comma. The whole item now moves with its first line, up to the `)` / `]` / `END` that closes it (nested items add up; with tabs each level is one tab). Following clauses such as `JOIN` and the next statement stay put, and lines that continue a string, comment, or placeholder are left untouched.
+
 ## [0.0.17] - 2026-10-01
 
 ### Fixed

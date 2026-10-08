@@ -113,6 +113,9 @@ export function validateConfig(config: FormatterConfig, editorOptions?: EditorOp
   }
 }
 
+/** A line that closes a multi-line item at the item's own column. */
+const CLOSER = /^(?:[)\]]|END\b)/i;
+
 /**
  * Move every wrapping separator comma to the front of the next code line
  * (`commaPosition: 'before'`).
@@ -122,7 +125,7 @@ export function validateConfig(config: FormatterConfig, editorOptions?: EditorOp
  * followed by a line comment — moves. Comment-only lines between it and the
  * next item are stepped over, so the comma lands on the item, not the comment.
  */
-function moveCommasToLineStarts(text: string, kinds: Uint8Array): string {
+function moveCommasToLineStarts(text: string, kinds: Uint8Array, useTabs: boolean): string {
   const lines = text.split('\n');
   const starts: number[] = [];
   let offset = 0;
@@ -173,6 +176,27 @@ function moveCommasToLineStarts(text: string, kinds: Uint8Array): string {
     }
   }
 
+  // The ", " pushes the item's first line two columns right; push the rest of
+  // the item (`WHEN …`, `END`, a closing `)`) with it so it stays aligned.
+  // An item runs over the lines indented past it plus the `)` / `]` / `END`
+  // that closes it at its own column; any other line at or left of its column
+  // (the next item, a comment, `JOIN`, the next statement) ends it. Nested
+  // items add up. With tabs, each level is one tab so indentation stays pure.
+  const shifts = new Array<number>(lines.length).fill(0);
+  for (const [target, column] of inserts) {
+    for (let index = target + 1; index < lines.length; index += 1) {
+      const line = lines[index] ?? '';
+      const base = starts[index] ?? 0;
+      const indent = line.length - line.trimStart().length;
+      if (indent === line.length) continue;
+      // A line that continues a string, a comment, or a placeholder is text.
+      if (kinds[base - 1] !== Kind.Code) continue;
+      if (indent < column) break;
+      if (indent === column && !CLOSER.test(line.slice(indent))) break;
+      shifts[index] = (shifts[index] ?? 0) + 1;
+    }
+  }
+
   for (const { line, column } of removals) {
     const current = lines[line] ?? '';
     lines[line] = `${current.slice(0, column)}${current.slice(column + 1)}`.trimEnd();
@@ -181,6 +205,12 @@ function moveCommasToLineStarts(text: string, kinds: Uint8Array): string {
     const current = lines[line] ?? '';
     lines[line] = `${current.slice(0, column)}, ${current.slice(column)}`;
   }
+  shifts.forEach((shift, line) => {
+    if (shift === 0) return;
+    const current = lines[line] ?? '';
+    const indent = current.length - current.trimStart().length;
+    lines[line] = `${current.slice(0, indent)}${(useTabs ? '\t' : '  ').repeat(shift)}${current.slice(indent)}`;
+  });
   return lines.join('\n');
 }
 
@@ -276,7 +306,7 @@ export function formatSql(
     ? rejoinFunctionCalls(result, lexer.scan(result))
     : result;
   const placed =
-    config.commaPosition === 'before' ? moveCommasToLineStarts(joined, lexer.scan(joined)) : joined;
+    config.commaPosition === 'before' ? moveCommasToLineStarts(joined, lexer.scan(joined), editorOptions ? !editorOptions.insertSpaces : false) : joined;
   // sql-formatter re-prints the parse tree, so the final newline belongs to no
   // statement and gets dropped. Restore it when the input had one: a formatter
   // must not add or remove the file's last byte, or every run leaves a
