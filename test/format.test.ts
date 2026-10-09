@@ -388,6 +388,47 @@ describe('formatSql', () => {
     );
   });
 
+  test('keeps a multi-line item aligned under its leading comma', () => {
+    const cfg = { ...config, commaPosition: 'before' };
+    const once = formatSql('SELECT a, CASE WHEN x = 1 THEN 1 ELSE 0 END AS c, b FROM t;', cfg);
+    expect(once).toBe(
+      'SELECT\n  a\n  , CASE\n      WHEN x = 1 THEN 1\n      ELSE 0\n    END AS c\n  , b\nFROM\n  t;'
+    );
+    expect(formatSql(once, cfg)).toBe(once);
+  });
+
+  test('shifts nested leading-comma items and leaves string continuations alone', () => {
+    const cfg = { ...config, commaPosition: 'before' };
+    expect(
+      formatSql(
+        'SELECT a, coalesce(aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa, bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb, ccccccccccccccccccccccccccccccc) AS m FROM t;',
+        cfg
+      )
+    ).toBe(
+      'SELECT\n  a\n  , coalesce(\n      aaaaaaaaaaaaaaaaaaaaaaaaaaaaaa\n      , bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb\n      , ccccccccccccccccccccccccccccccc\n    ) AS m\nFROM\n  t;'
+    );
+    expect(formatSql("SELECT a, CASE WHEN x = 1 THEN 'p\n    q' END AS c FROM t;", cfg)).toBe(
+      "SELECT\n  a\n  , CASE\n      WHEN x = 1 THEN 'p\n    q'\n    END AS c\nFROM\n  t;"
+    );
+  });
+
+  test('does not shift a clause or statement that follows a leading-comma item', () => {
+    const cfg = { ...config, commaPosition: 'before' };
+    expect(formatSql('SELECT a FROM t, u INNER JOIN v ON v.k = u.k WHERE 1 = 1;', cfg)).toBe(
+      'SELECT\n  a\nFROM\n  t\n  , u\n  INNER JOIN v ON v.k = u.k\nWHERE\n  1 = 1;'
+    );
+    expect(formatSql('ALTER TABLE t ADD COLUMN a int, ADD COLUMN b int;\nSELECT 1;', cfg)).toBe(
+      'ALTER TABLE t\nADD COLUMN a int\n, ADD COLUMN b int;\n\nSELECT\n  1;'
+    );
+  });
+
+  test('shifts by a whole tab when indenting with tabs', () => {
+    const cfg = { ...config, commaPosition: 'before' };
+    expect(
+      formatSql('SELECT a, CASE WHEN x = 1 THEN 1 END AS c FROM t;', cfg, { tabSize: 4, insertSpaces: false })
+    ).toBe('SELECT\n\ta\n\t, CASE\n\t\t\tWHEN x = 1 THEN 1\n\t\tEND AS c\nFROM\n\tt;');
+  });
+
   test('keeps trailing comments with their item when commaPosition is before', () => {
     const cfg = { ...config, commaPosition: 'before' };
     expect(formatSql('SELECT order_id, -- c\norder_date, -- c\namount FROM t;', cfg)).toBe(
