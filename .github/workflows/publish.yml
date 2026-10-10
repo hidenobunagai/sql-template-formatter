@@ -133,4 +133,25 @@ jobs:
       # provenance attestations automatically.
       - name: Publish to npm
         if: steps.npm-version.outputs.published == 'false'
-        run: npm publish --access public
+        run: |
+          VERSION="$(node -p "require('./package.json').version")"
+          set +e
+          OUTPUT="$(npm publish --access public 2>&1)"
+          STATUS=$?
+          set -e
+          printf '%s\n' "$OUTPUT"
+          if [ "$STATUS" -eq 0 ]; then
+            exit 0
+          fi
+          # The guard above cannot see a version that npm has staged but not yet
+          # promoted: for a few minutes after a publish the registry still answers
+          # "no such version", so a second publish of it (a tag run racing a manual
+          # dispatch run, as on 2026-10-09) is rejected with "Cannot publish over
+          # previously staged version <v>" while the first copy is already on its
+          # way to the registry. That is the idempotency the guard was meant to
+          # provide, so treat it as done instead of failing the run.
+          if printf '%s' "$OUTPUT" | grep -qiE 'previously (staged|published) version'; then
+            echo "::notice::sql-template-formatter@${VERSION} was already staged or published; nothing to do"
+            exit 0
+          fi
+          exit "$STATUS"
