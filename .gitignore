@@ -16,3 +16,6 @@ __pycache__/
 
 # bun.lock is the only lockfile (CI installs with bun --frozen-lockfile)
 package-lock.json
+
+# macOS
+.DS_Store
