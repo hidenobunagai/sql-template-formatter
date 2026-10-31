@@ -20,6 +20,21 @@ import {
 
 const CONFIG_FILENAME = '.sql-formatter.json';
 
+const ALLOWED_CONFIG_KEYS = new Set([
+  'language',
+  'keywordCase',
+  'tabWidth',
+  'useTabs',
+  'paramTypes',
+  'placeholderPatterns',
+  'namedPrefixes',
+  'replaceOrdinals',
+  'commaPosition',
+  'keepFunctionsInline',
+]);
+
+const ALLOWED_PARAM_TYPES_KEYS = new Set(['custom', 'named']);
+
 interface FileConfig {
   language?: string;
   keywordCase?: string;
@@ -71,11 +86,28 @@ function findConfigPath(startDir: string): string | undefined {
 }
 
 function readConfig(file: string): FileConfig {
+  let parsed: unknown;
   try {
-    return JSON.parse(readFileSync(file, 'utf8')) as FileConfig;
+    parsed = JSON.parse(readFileSync(file, 'utf8'));
   } catch (err) {
     throw new Error(`cannot read config ${file}: ${(err as Error).message}`);
   }
+  if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
+    for (const key of Object.keys(parsed)) {
+      if (!ALLOWED_CONFIG_KEYS.has(key)) {
+        throw new Error(`${file}: unknown key "${key}" in config`);
+      }
+    }
+    const paramTypes = (parsed as FileConfig).paramTypes;
+    if (typeof paramTypes === 'object' && paramTypes !== null && !Array.isArray(paramTypes)) {
+      for (const key of Object.keys(paramTypes)) {
+        if (!ALLOWED_PARAM_TYPES_KEYS.has(key)) {
+          throw new Error(`${file}: unknown key "${key}" in paramTypes`);
+        }
+      }
+    }
+  }
+  return parsed as FileConfig;
 }
 
 function buildConfig(
@@ -172,7 +204,10 @@ function main(): number {
       } catch (err) {
         // readConfig() already names the file; validation errors do not.
         const message = (err as Error).message;
-        const named = configPath === undefined || message.startsWith('cannot read config');
+        const named =
+          configPath === undefined ||
+          message.startsWith(`${configPath}:`) ||
+          message.startsWith('cannot read config');
         entry = new Error(named ? message : `${configPath}: ${message}`);
       }
       resolved.set(key, entry);

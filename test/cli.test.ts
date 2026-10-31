@@ -253,6 +253,99 @@ describe('sql-template-formatter CLI', () => {
     expect(result.stderr).toContain('--write needs at least one file');
   });
 
+  test('rejects unknown top-level keys in .sql-formatter.json before rewriting any file', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'sql-template-formatter-unknown-key-'));
+    try {
+      const configPath = path.join(root, '.sql-formatter.json');
+      writeFileSync(configPath, JSON.stringify({ keywordcase: 'lower' }));
+      const sqlFile = path.join(root, 'query.sql');
+      writeFileSync(sqlFile, 'select 1;\n');
+      const result = run(['--write', 'query.sql'], root);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain(configPath);
+      expect(result.stderr).toContain('keywordcase');
+      expect(readFileSync(sqlFile, 'utf8')).toBe('select 1;\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects unknown keys in a config file explicitly passed via --config', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'sql-template-formatter-explicit-config-'));
+    try {
+      const configPath = path.join(root, 'custom-config.json');
+      writeFileSync(configPath, JSON.stringify({ unknownOption: true }));
+      const sqlFile = path.join(root, 'query.sql');
+      writeFileSync(sqlFile, 'select 1;\n');
+      const result = run(['--config', configPath, '--write', 'query.sql'], root);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain(configPath);
+      expect(result.stderr).toContain('unknownOption');
+      expect(readFileSync(sqlFile, 'utf8')).toBe('select 1;\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects unknown subkeys under paramTypes in config', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'sql-template-formatter-paramtypes-subkey-'));
+    try {
+      const configPath = path.join(root, '.sql-formatter.json');
+      writeFileSync(configPath, JSON.stringify({ paramTypes: { invalidSubKey: [] } }));
+      const sqlFile = path.join(root, 'query.sql');
+      writeFileSync(sqlFile, 'select 1;\n');
+      const result = run(['--write', 'query.sql'], root);
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain(configPath);
+      expect(result.stderr).toContain('invalidSubKey');
+      expect(readFileSync(sqlFile, 'utf8')).toBe('select 1;\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('accepts all valid configuration keys in .sql-formatter.json', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'sql-template-formatter-all-keys-'));
+    try {
+      writeFileSync(
+        path.join(root, '.sql-formatter.json'),
+        JSON.stringify({
+          language: 'postgresql',
+          keywordCase: 'upper',
+          tabWidth: 2,
+          useTabs: false,
+          paramTypes: { custom: [{ regex: '\\$foo' }], named: [':'] },
+          placeholderPatterns: ['\\$\\{[^}]+\\}'],
+          namedPrefixes: [':'],
+          replaceOrdinals: true,
+          commaPosition: 'after',
+          keepFunctionsInline: false,
+        })
+      );
+      const sqlFile = path.join(root, 'query.sql');
+      writeFileSync(sqlFile, 'select 1;\n');
+      const result = run(['query.sql'], root);
+      expect(result.status).toBe(0);
+      expect(result.stdout).toBe('SELECT\n  1;\n');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('rejects unknown keys in config when reading from stdin', () => {
+    const root = mkdtempSync(path.join(tmpdir(), 'sql-template-formatter-stdin-unknown-'));
+    try {
+      const configPath = path.join(root, '.sql-formatter.json');
+      writeFileSync(configPath, JSON.stringify({ typoKey: 'val' }));
+      const result = run([], root, 'select 1;\n');
+      expect(result.status).toBe(2);
+      expect(result.stderr).toContain(configPath);
+      expect(result.stderr).toContain('typoKey');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
   test('--version prints the package version', () => {
     const pkg = JSON.parse(
       readFileSync(path.join(import.meta.dir, '..', 'package.json'), 'utf8')

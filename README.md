@@ -83,7 +83,7 @@ Each file is formatted with the `.sql-formatter.json` nearest to it (searching i
 }
 ```
 
-When neither `placeholderPatterns` nor `paramTypes.custom` is set, the extension's five default patterns apply, so placeholders survive untouched. The CLI does not read VS Code's `settings.json`; its defaults match the extension's defaults (`postgresql` + `upper` + ordinals replaced), and every extension setting has a CLI flag or config key, so equal settings give byte-identical output.
+When neither `placeholderPatterns` nor `paramTypes.custom` is set, the extension's five default patterns apply, so placeholders survive untouched. The CLI does not read VS Code's `settings.json`; its defaults match the extension's defaults (`postgresql` + `upper` + ordinals replaced), and every extension setting has a CLI flag or config key, so equal settings give byte-identical output. Any unknown key in a configuration file is rejected with exit code 2 before formatting begins, leaving files untouched.
 
 Exit codes: `0` success, `1` `--check` found an unformatted input, `2` an error (bad option or config, unreadable file, unparsable SQL). When both happen, `2` wins.
 
