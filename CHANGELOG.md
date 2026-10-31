@@ -3,6 +3,12 @@
 Notable changes to the **SQL Template Formatter** VS Code extension.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.0.19] - 2026-11-01
+
+### Changed
+
+- **Unknown keys in `.sql-formatter.json` are now rejected.** A typo'd option used to be silently ignored, so files were formatted with the default settings while the config looked right. The CLI now names the config file and the offending key and exits with code 2, before anything is written.
+
 ## [0.0.18] - 2026-10-09
 
 ### Fixed
