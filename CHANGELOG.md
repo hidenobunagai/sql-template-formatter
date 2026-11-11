@@ -3,6 +3,12 @@
 Notable changes to the **SQL Template Formatter** VS Code extension.
 Format follows [Keep a Changelog](https://keepachangelog.com/en/1.1.0/); versions follow [Semantic Versioning](https://semver.org/).
 
+## [0.0.20] - 2026-11-11
+
+### Fixed
+
+- **`replaceOrdinals` keeps ordinals at or after a top-level placeholder.** A select item holding a placeholder outside parentheses (`{dims}`, `${dims}`, `%s`, `%(name)s`) was counted as exactly one column, but its value may contain commas and expand to several columns at runtime, so `SELECT {dims}, cal_yr_mo_cd, … GROUP BY 1, 2, 3 ORDER BY 1, 2` was rewritten to group and sort by `cal_yr_mo_cd` where the original ordinal `2` meant the second expanded column — GROUP BY at least errors, ORDER BY silently changed the ordering. Such an item is now treated like a `*` item: its ordinal and every later ordinal are kept, while ordinals before it still resolve. A placeholder inside parentheses (`SUM({col})`) remains one column and does not affect later ordinals.
+
 ## [0.0.19] - 2026-11-01
 
 ### Changed
