@@ -22,6 +22,13 @@ interface SelectColumn {
   readonly uncertain: boolean;
   /** `*` or `t.*`: expands to an unknown number of columns. */
   readonly star: boolean;
+  /**
+   * A placeholder at the item's own parenthesis depth (`{dims}`, `${dims}`,
+   * `%s`, `%(name)s`): its value may contain commas, so like `*` it expands
+   * to an unknown number of columns. A placeholder inside parentheses
+   * (`SUM({col})`) stays part of one column and does not set this.
+   */
+  readonly expands: boolean;
 }
 
 interface Clause {
@@ -352,11 +359,17 @@ function columnOf(tokens: readonly SqlToken[], start: number, end: number): Sele
       aggregate: false,
       uncertain: true,
       star: false,
+      expands: false,
     };
   }
   const secondLast = visible[visible.length - 2];
   const aggregate = AGGREGATE_FUNCTIONS.has(first.text.toLowerCase()) || first.text === "*";
   const star = last.text === "*";
+  // A placeholder token carries the parenthesis depth of its position, so
+  // one at the first token's depth sits outside every call in the item.
+  const expands = visible.some(
+    (token) => isPlaceholderToken(token) && token.depth === first.depth,
+  );
   const column = (alias: string | undefined, expressionEnd: number, uncertain = false): SelectColumn => ({
     expressionStart: first.start,
     expressionEnd,
@@ -364,6 +377,7 @@ function columnOf(tokens: readonly SqlToken[], start: number, end: number): Sele
     aggregate,
     uncertain: uncertain || star,
     star,
+    expands,
   });
 
   if (secondLast === undefined || isSimpleColumn(visible)) return column(undefined, last.end);
@@ -433,6 +447,10 @@ function bareName(text: string): string {
  * - ORDER BY uses a unique alias (output names win there) or the expression.
  * - An expression that mentions any output alias, holds a placeholder, is a
  *   bare constant, or (for GROUP BY) is an aggregate keeps its ordinal.
+ * - An item holding a placeholder at its own level (`{dims}`, `${dims}`,
+ *   `%s`) may expand to several columns, so it and every item after it keep
+ *   their ordinals, exactly like a `*` item; a placeholder inside
+ *   parentheses (`SUM({col})`) does not affect later ordinals.
  * - The ORDER BY of a UNION / EXCEPT / INTERSECT sorts the combined result,
  *   which can only be addressed by the first branch's output names; it keeps
  *   its ordinals.
@@ -529,10 +547,12 @@ export function replaceOrdinals(sql: string, kinds: Uint8Array): string {
         const ordinal = Number.parseInt(ordinalToken.text, 10);
         const column = scope.columns[ordinal - 1];
         if (column === undefined) continue;
-        // `*` / `t.*` expands to an unknown number of columns: every ordinal
-        // from that item on points somewhere this scan cannot see.
-        const star = scope.columns.findIndex((c) => c.star);
-        if (star !== -1 && ordinal - 1 >= star) continue;
+        // `*` / `t.*`, or an item holding a top-level placeholder whose
+        // value may expand to several columns, makes its width unknown:
+        // every ordinal from that item on points somewhere this scan
+        // cannot see.
+        const blocked = scope.columns.findIndex((c) => c.star || c.expands);
+        if (blocked !== -1 && ordinal - 1 >= blocked) continue;
         const text = resolveOrdinal(scope, column, clause === scope.orderBy ? "order" : "group");
         if (text === undefined || text.length === 0) continue;
         replacements.push({ start: ordinalToken.start, end: ordinalToken.end, text });

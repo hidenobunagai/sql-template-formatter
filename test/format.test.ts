@@ -218,16 +218,56 @@ describe('formatSql', () => {
     );
   });
 
-  test('keeps ordinal when column expression contains a placeholder', () => {
+  test('keeps ordinals at or after a placeholder, whose width is unknown', () => {
     expect(
       formatSql('SELECT ${col}, name FROM t GROUP BY 1, 2;', config)
     ).toBe(
-      'SELECT\n  ${col},\n  name\nFROM\n  t\nGROUP BY\n  1,\n  name;'
+      'SELECT\n  ${col},\n  name\nFROM\n  t\nGROUP BY\n  1,\n  2;'
     );
     expect(
       formatSql('SELECT %s, name FROM t GROUP BY 1, 2;', config)
     ).toBe(
-      'SELECT\n  %s,\n  name\nFROM\n  t\nGROUP BY\n  1,\n  name;'
+      'SELECT\n  %s,\n  name\nFROM\n  t\nGROUP BY\n  1,\n  2;'
+    );
+  });
+
+  test('treats a top-level placeholder like a star column, whose width is unknown', () => {
+    // {dims} may expand to two columns at runtime, so ordinal 2 below is
+    // ntwk_local_nm, not cal_yr_mo_cd: every ordinal must stay.
+    expect(
+      formatSql('SELECT {dims}, cal_yr_mo_cd, SUM(amt) AS amt FROM osfn GROUP BY 1, 2, 3 ORDER BY 1, 2;', config)
+    ).toContain('GROUP BY\n  1,\n  2,\n  3\nORDER BY\n  1,\n  2;');
+    expect(
+      formatSql('SELECT ${dims}, cal_yr_mo_cd, SUM(amt) AS amt FROM osfn GROUP BY 1, 2, 3;', config)
+    ).toContain('GROUP BY\n  1,\n  2,\n  3;');
+    // Ordinals before the placeholder still resolve.
+    expect(formatSql('SELECT a, {dims}, b FROM t GROUP BY 1, 3;', config)).toContain(
+      'GROUP BY\n  a,\n  3;'
+    );
+    // A comma may lead the interpolated value (`b {extra}`).
+    expect(formatSql('SELECT a, b {extra}, c FROM t GROUP BY 1, 2, 3;', config)).toContain(
+      'GROUP BY\n  a,\n  2,\n  3;'
+    );
+    expect(formatSql('SELECT a, %s, b FROM t GROUP BY 1, 3;', config)).toContain(
+      'GROUP BY\n  a,\n  3;'
+    );
+    expect(formatSql('SELECT a, %(dims)s, b FROM t GROUP BY 1, 3;', config)).toContain(
+      'GROUP BY\n  a,\n  3;'
+    );
+  });
+
+  test('keeps resolving ordinals after a placeholder inside parentheses', () => {
+    expect(formatSql('SELECT SUM({col}), amount FROM t GROUP BY 2;', config)).toContain(
+      'GROUP BY\n  amount;'
+    );
+    expect(formatSql('SELECT upper({col}) AS u, amount FROM t ORDER BY 1, 2;', config)).toContain(
+      'ORDER BY\n  u,\n  amount;'
+    );
+  });
+
+  test('does not mistake the modulo operator for a %-placeholder', () => {
+    expect(formatSql('SELECT a % 2 AS m, b FROM t GROUP BY 2;', config)).toContain(
+      'GROUP BY\n  b;'
     );
   });
 
