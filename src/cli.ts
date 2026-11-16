@@ -85,6 +85,32 @@ function findConfigPath(startDir: string): string | undefined {
   }
 }
 
+function isPlainObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
+
+const CONFIG_KEY_TYPES: Record<string, { check: (v: unknown) => boolean; expected: string }> = {
+  language: { check: (v) => typeof v === 'string', expected: 'a string' },
+  keywordCase: { check: (v) => typeof v === 'string', expected: 'a string' },
+  commaPosition: { check: (v) => typeof v === 'string', expected: 'a string' },
+  tabWidth: { check: (v) => typeof v === 'number', expected: 'a number' },
+  useTabs: { check: (v) => typeof v === 'boolean', expected: 'a boolean' },
+  replaceOrdinals: { check: (v) => typeof v === 'boolean', expected: 'a boolean' },
+  keepFunctionsInline: { check: (v) => typeof v === 'boolean', expected: 'a boolean' },
+  placeholderPatterns: {
+    check: (v) => Array.isArray(v) && v.every((x) => typeof x === 'string'),
+    expected: 'an array of strings',
+  },
+  namedPrefixes: {
+    check: (v) => Array.isArray(v) && v.every((x) => typeof x === 'string'),
+    expected: 'an array of strings',
+  },
+  paramTypes: {
+    check: isPlainObject,
+    expected: 'an object',
+  },
+};
+
 function readConfig(file: string): FileConfig {
   let parsed: unknown;
   try {
@@ -92,18 +118,41 @@ function readConfig(file: string): FileConfig {
   } catch (err) {
     throw new Error(`cannot read config ${file}: ${(err as Error).message}`);
   }
-  if (typeof parsed === 'object' && parsed !== null && !Array.isArray(parsed)) {
-    for (const key of Object.keys(parsed)) {
-      if (!ALLOWED_CONFIG_KEYS.has(key)) {
-        throw new Error(`${file}: unknown key "${key}" in config`);
+  if (!isPlainObject(parsed)) {
+    throw new Error(`${file}: config must be a JSON object`);
+  }
+  for (const key of Object.keys(parsed)) {
+    if (!ALLOWED_CONFIG_KEYS.has(key)) {
+      throw new Error(`${file}: unknown key "${key}" in config`);
+    }
+  }
+  for (const [key, validator] of Object.entries(CONFIG_KEY_TYPES)) {
+    const value = parsed[key];
+    if (value !== undefined && !validator.check(value)) {
+      throw new Error(`${file}: "${key}" must be ${validator.expected}`);
+    }
+  }
+  const paramTypes = parsed.paramTypes;
+  if (paramTypes !== undefined) {
+    const pt = paramTypes as Record<string, unknown>;
+    for (const key of Object.keys(pt)) {
+      if (!ALLOWED_PARAM_TYPES_KEYS.has(key)) {
+        throw new Error(`${file}: unknown key "${key}" in paramTypes`);
       }
     }
-    const paramTypes = (parsed as FileConfig).paramTypes;
-    if (typeof paramTypes === 'object' && paramTypes !== null && !Array.isArray(paramTypes)) {
-      for (const key of Object.keys(paramTypes)) {
-        if (!ALLOWED_PARAM_TYPES_KEYS.has(key)) {
-          throw new Error(`${file}: unknown key "${key}" in paramTypes`);
-        }
+    if (pt.custom !== undefined) {
+      if (
+        !Array.isArray(pt.custom) ||
+        !pt.custom.every(
+          (item) => isPlainObject(item) && typeof item.regex === 'string'
+        )
+      ) {
+        throw new Error(`${file}: "paramTypes.custom" must be an array of objects with a regex string`);
+      }
+    }
+    if (pt.named !== undefined) {
+      if (!Array.isArray(pt.named) || !pt.named.every((item) => typeof item === 'string')) {
+        throw new Error(`${file}: "paramTypes.named" must be an array of strings`);
       }
     }
   }
