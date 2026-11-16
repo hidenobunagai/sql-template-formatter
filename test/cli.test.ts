@@ -346,6 +346,74 @@ describe('sql-template-formatter CLI', () => {
     }
   });
 
+  test('rejects non-object configuration and invalid option types before rewriting any file', () => {
+    const cases: Array<{ name: string; config: unknown; expectedKey?: string; expectedText?: string }> = [
+      {
+        name: 'top-level array',
+        config: [{ language: 'postgresql' }],
+        expectedText: 'config must be a JSON object',
+      },
+      {
+        name: 'replaceOrdinals as string',
+        config: { replaceOrdinals: 'false' },
+        expectedKey: 'replaceOrdinals',
+      },
+      {
+        name: 'tabWidth as string',
+        config: { tabWidth: '2' },
+        expectedKey: 'tabWidth',
+      },
+      {
+        name: 'placeholderPatterns as string',
+        config: { placeholderPatterns: '\\$\\{[^}]+\\}' },
+        expectedKey: 'placeholderPatterns',
+      },
+      {
+        name: 'placeholderPatterns element as number',
+        config: { placeholderPatterns: [123] },
+        expectedKey: 'placeholderPatterns',
+      },
+      {
+        name: 'paramTypes.custom element without regex string',
+        config: { paramTypes: { custom: [{ notRegex: 'abc' }] } },
+        expectedKey: 'paramTypes.custom',
+      },
+      {
+        name: 'paramTypes.custom element as non-object',
+        config: { paramTypes: { custom: ['not-an-object'] } },
+        expectedKey: 'paramTypes.custom',
+      },
+      {
+        name: 'paramTypes.named as string (not array)',
+        config: { paramTypes: { named: ':' } },
+        expectedKey: 'paramTypes.named',
+      },
+    ];
+
+    for (const c of cases) {
+      const root = mkdtempSync(path.join(tmpdir(), 'sql-template-formatter-type-check-'));
+      try {
+        const configPath = path.join(root, '.sql-formatter.json');
+        writeFileSync(configPath, JSON.stringify(c.config));
+        const sqlFile = path.join(root, 'query.sql');
+        const initialSql = 'select 1;\n';
+        writeFileSync(sqlFile, initialSql);
+        const result = run(['--write', 'query.sql'], root);
+        expect(result.status).toBe(2);
+        expect(result.stderr).toContain(configPath);
+        if (c.expectedKey) {
+          expect(result.stderr).toContain(c.expectedKey);
+        }
+        if (c.expectedText) {
+          expect(result.stderr).toContain(c.expectedText);
+        }
+        expect(readFileSync(sqlFile, 'utf8')).toBe(initialSql);
+      } finally {
+        rmSync(root, { recursive: true, force: true });
+      }
+    }
+  });
+
   test('--version prints the package version', () => {
     const pkg = JSON.parse(
       readFileSync(path.join(import.meta.dir, '..', 'package.json'), 'utf8')
